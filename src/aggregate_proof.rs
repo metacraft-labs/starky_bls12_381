@@ -68,7 +68,7 @@ fn calc_pairing_precomp<
     (stark, proof, config)
 }
 
-fn miller_loop_main<
+pub fn miller_loop_main<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F=F>,
     const D: usize
@@ -147,7 +147,7 @@ fn fp12_mul_main<
     (stark, proof, config)
 }
 
-fn final_exponentiate_main<
+pub fn final_exponentiate_main<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F=F>,
     const D: usize
@@ -414,7 +414,7 @@ pub fn aggregate_proof
 }
 
 
-fn recursive_proof<
+pub fn recursive_proof<
     F: plonky2::hash::hash_types::RichField + plonky2::field::extension::Extendable<D>,
     C: GenericConfig<D, F = F>,
     S: starky::stark::Stark<F, D> + Copy,

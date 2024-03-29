@@ -22,6 +22,9 @@ snowbridge-milagro-bls = "1.5.4"
 eth-types = { git = "https://github.com/aurora-is-near/rainbow-bridge"}
 tree_hash = "0.5"
 tree_hash_derive = "0.5"
+ark-bls12-381 = "0.4.0"
+ark-std = "0.4.0"
+ark-ec = "0.4.2"
 
 [profile.test]
 opt-level = 3

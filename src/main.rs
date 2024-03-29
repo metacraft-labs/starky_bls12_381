@@ -1,56 +1,163 @@
-use eth_types::{eth2::{BeaconBlockHeader, SigningData, SyncAggregate, SyncCommittee, SyncCommitteeUpdate}, H256};
-use starky_bls12_381::aggregate_proof::aggregate_proof;
-use tree_hash::TreeHash;
-use std::fs::File;
-use std::io::BufReader;
+use ark_bls12_381::{
+    g1::G1_GENERATOR_X, g1::G1_GENERATOR_Y, Fr, G1Affine, G1Projective, G2Affine, G2Projective,
+};
+use ark_ec::{pairing::Pairing, short_weierstrass::Affine, Group};
+use ark_std::UniformRand;
+use eth_types::{
+    eth2::{BeaconBlockHeader, SigningData, SyncAggregate, SyncCommittee, SyncCommitteeUpdate},
+    H256,
+};
+use num_bigint::BigUint;
+use plonky2::plonk::{
+    circuit_data::CircuitConfig,
+    config::{GenericConfig, PoseidonGoldilocksConfig},
+};
 use serde_json::{self, Value};
+use starky_bls12_381::{
+    aggregate_proof::{
+        aggregate_proof, final_exponentiate_main, miller_loop_main, recursive_proof,
+    },
+    calc_pairing_precomp::PairingPrecompStark,
+    ecc_aggregate::ECCAggStark,
+    final_exponentiate::FinalExponentiateStark,
+    fp12_mul::FP12MulStark,
+    miller_loop::MillerLoopStark,
+    native::{calc_pairing_precomp, miller_loop, Fp, Fp12, Fp2},
+};
+use std::io::BufReader;
+use std::{fs::File, str::FromStr};
+use tree_hash::TreeHash;
 
-fn main() {
-   env_logger::init();
-   let file = File::open("src/light_client_update_period_1053.json").unwrap();
-   let reader = BufReader::new(file);
-   let light_client_update_json:Value = serde_json::from_reader(reader).expect("unable to read the file");
+fn main_thread() {
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
 
-   let prev_file = File::open("src/light_client_update_period_1052.json").unwrap();
-   let reader = BufReader::new(prev_file);
-   let prev_light_client_update_json:Value = serde_json::from_reader(reader).expect("unable to read the file");
+    type PpStark = PairingPrecompStark<F, D>;
+    type MlStark = MillerLoopStark<F, D>;
+    type Fp12MulStark = FP12MulStark<F, D>;
+    type FeStark = FinalExponentiateStark<F, D>;
+    type ECAggStark = ECCAggStark<F, D>;
 
+    let config = CircuitConfig::standard_recursion_config();
+    let rng = &mut ark_std::rand::thread_rng();
+    let g1 = G1Projective::generator();
+    let r = G1Affine::rand(rng);
+    let sk: Fr = Fr::rand(rng);
+    let pk = Into::<G1Affine>::into(g1 * sk);
+    let message = G2Affine::rand(rng);
+    let signature = Into::<G2Affine>::into(message * sk);
 
-   let pub_keys =  prev_light_client_update_json["data"]["next_sync_committee"]["pubkeys"]
-                                                                                                .as_array().unwrap()
-                                                                                                .iter()
-                                                                                                .map(|i| i.to_string())
-                                                                                                .collect::<Vec<String>>();
+    let pk_message = ark_bls12_381::Bls12_381::pairing(pk, message).0;
+    let g1_signature = ark_bls12_381::Bls12_381::pairing(g1, signature).0;
 
-    let sync_aggregate_str = serde_json::to_string(light_client_update_json["data"]["sync_aggregate"].as_object().unwrap()).unwrap();                                                                                      
-    let sync_aggregate: SyncAggregate = serde_json::from_str(&sync_aggregate_str).unwrap();
+    assert_eq!(pk_message, g1_signature);
 
-    let domain:[u8;32] = hex::decode("0x070000006a95a1a967855d676d48be69883b712607f952d5198d0f5677564636".split_at(2).1).unwrap().try_into().unwrap();
-    let domain_h256 = H256::from(domain);
-
-    let attested_header_str = serde_json::to_string(&light_client_update_json["data"]["attested_header"]["beacon"].as_object().unwrap()).unwrap();
-    let attested_header: BeaconBlockHeader = serde_json::from_str(&attested_header_str).unwrap();
-
-    let signing_root = H256(
-        SigningData{
-            object_root: H256(attested_header.tree_hash_root()),
-            domain: domain_h256
-        }.tree_hash_root()
+    let result_message = miller_loop(
+        Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
     );
 
-    let prev_next_sync_committee_branch_json_str = serde_json::to_string(&prev_light_client_update_json["data"]["next_sync_committee_branch"].as_array().unwrap()).unwrap();
-    let prev_next_sync_committee_branch: Vec<eth_types::H256> =
-    serde_json::from_str(&prev_next_sync_committee_branch_json_str).unwrap();
+    let result_signature = miller_loop(
+        Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
 
-    let prev_next_sync_committee_json_str = serde_json::to_string(&prev_light_client_update_json["data"]["next_sync_committee"]).unwrap();
-    let prev_next_sync_committee: SyncCommittee =
-        serde_json::from_str(&prev_next_sync_committee_json_str).unwrap();
+    let pk_message_native = result_message.final_exponentiate();
+    let g1_signature_native = result_signature.final_exponentiate();
 
-    let prev_sync_committee_update = SyncCommitteeUpdate {
-        next_sync_committee: prev_next_sync_committee,
-        next_sync_committee_branch: prev_next_sync_committee_branch,
-    };
+    assert_eq!(pk_message_native, g1_signature_native);
 
-    aggregate_proof(pub_keys, sync_aggregate,signing_root.0.0, prev_sync_committee_update);
-    return;
+    println!("Starting the circuits now");
+
+    let (stark_ml1, proof_ml1, config_ml1) = miller_loop_main::<F, C, D>(
+        Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
+    let recursive_ml1 =
+        recursive_proof::<F, C, MlStark, C, D>(stark_ml1, proof_ml1.clone(), &config_ml1, true);
+
+    println!("second miller loop");
+    let (stark_ml2, proof_ml2, config_ml2) = miller_loop_main::<F, C, D>(
+        Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
+    let recursive_ml2 =
+        recursive_proof::<F, C, MlStark, C, D>(stark_ml2, proof_ml2.clone(), &config_ml2, true);
+
+    let (stark_final_exp, proof_final_exp, config_final_exp) =
+        final_exponentiate_main::<F, C, D>(result_message);
+    let message_exp = recursive_proof::<F, C, FeStark, C, D>(
+        stark_final_exp,
+        proof_final_exp,
+        &config_final_exp,
+        true,
+    );
+
+    let (stark_final_exp, proof_final_exp, config_final_exp) =
+        final_exponentiate_main::<F, C, D>(result_signature);
+    let signiture_exp = recursive_proof::<F, C, FeStark, C, D>(
+        stark_final_exp,
+        proof_final_exp,
+        &config_final_exp,
+        true,
+    );
+}
+
+fn main() {
+    std::thread::Builder::new()
+        .spawn(|| {
+            main_thread();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }
