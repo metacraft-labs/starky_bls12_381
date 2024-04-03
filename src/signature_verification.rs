@@ -221,6 +221,7 @@ pub fn verify_all_proofs(
     }
 }
 
+// FAILS
 pub fn signature_aggregation(
     builder: &mut CircuitBuilder<F, D>,
     g2_point: PointG2Target,
@@ -247,13 +248,11 @@ mod tests {
         fp2_plonky2::Fp2Target,
         fp_plonky2::N,
         g1_plonky2::PointG1Target,
-        g2_plonky2::g2_add_unequal,
+        g2_plonky2::{g2_add_unequal, PointG2Target},
         hash_to_curve::hash_to_curve,
         miller_loop::MillerLoopStark,
-        native::{calc_pairing_precomp, miller_loop, Fp, Fp2},
-        signature_verification::{
-            calculate_signature, verify_all_proofs, verify_final_exponentiation,
-        },
+        native::{calc_pairing_precomp, Fp, Fp2},
+        signature_verification::{calculate_signature, verify_all_proofs},
     };
 
     const D: usize = 2;
@@ -314,7 +313,7 @@ mod tests {
         let by_c1 = builder.add_virtual_biguint_target(N);
         let b = [[bx_c0, bx_c1], [by_c0, by_c1]];
 
-        let c = g2_add_unequal(&mut builder, &a, &b);
+        let _c = g2_add_unequal(&mut builder, &a, &b);
         for _ in 0..10 {}
 
         let now = Instant::now();
@@ -339,24 +338,26 @@ mod tests {
             builder.constant_biguint(&g1_generator_x),
             builder.constant_biguint(&g1_generator_y),
         ];
+        let g1_generator_x = Fp::get_fp_from_biguint(g1_generator_x);
+        let g1_generator_y = Fp::get_fp_from_biguint(g1_generator_y);
 
-        // SIGNATURE
+        // SIGNATURE GENERATION
+        let g2_identity_x = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 4
+        let g2_identity_y = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 5
+        let g2_identity_inf = Fp2::zero();
+
         let msg = vec![0; 0];
         let c0 = builder.add_virtual_biguint_target(N);
         let c1 = builder.add_virtual_biguint_target(N);
         let secret_key: Fp2Target = [c0, c1];
         let msg_targets = builder.add_virtual_targets(msg.len());
-        let signature = calculate_signature(&mut builder, &msg_targets, &secret_key);
+        let signature: PointG2Target = calculate_signature(&mut builder, &msg_targets, &secret_key);
 
         // PUBLIC KEY 0x8f2c5635a1305063c39326aeb55db809b24b05d0466ab1ac9885d729978b5337430fa17790486f263a7d94a8b2122adb
         let public_key_as_g1_point = g1_generator.clone();
 
         // MESSAGE AS G2 POINT
         let hm_as_g2_point = hash_to_curve(&mut builder, &msg_targets);
-
-        let g2_identity_x = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 4
-        let g2_identity_y = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 5
-        let g2_identity_inf = Fp2::zero();
 
         let ell_coeffs = calc_pairing_precomp(g2_identity_x, g2_identity_y, g2_identity_inf);
         let ell_coeffs_x_c0 = ell_coeffs[0][0].0[0].to_biguint();
@@ -373,9 +374,6 @@ mod tests {
         println!("ell_coeffs_z_c0 are: {:?}", ell_coeffs_z_c0);
         println!("ell_coeffs_z_c1 are: {:?}", ell_coeffs_z_c1);
         println!("----------------------------------------------------------------");
-
-        let g1_generator_x = Fp::get_fp_from_biguint(g1_generator_x);
-        let g1_generator_y = Fp::get_fp_from_biguint(g1_generator_y);
 
         // FIRST MILLER LOOP
         let first_ml_proof = verify_miller_loop(
