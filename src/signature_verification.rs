@@ -1,13 +1,11 @@
 use num_bigint::BigUint;
 use plonky2::{
-    field::{extension::Extendable, goldilocks_field::GoldilocksField},
+    field::extension::Extendable,
     hash::hash_types::RichField,
-    iop::target::{BoolTarget, Target},
+    iop::target::Target,
     plonk::{
         circuit_builder::CircuitBuilder,
-        circuit_data::CommonCircuitData,
         config::{GenericConfig, PoseidonGoldilocksConfig},
-        proof::ProofWithPublicInputs,
     },
 };
 use plonky2_crypto::biguint::{BigUintTarget, CircuitBuilderBiguint};
@@ -20,7 +18,7 @@ use crate::{
     g2_plonky2::{g2_add_unequal, g2_scalar_mul, PointG2Target},
     hash_to_curve::hash_to_curve,
     miller_loop::MillerLoopStark,
-    native::{miller_loop, Fp, Fp12, Fp2},
+    native::{Fp, Fp12, Fp2},
 };
 
 const D: usize = 2;
@@ -47,7 +45,8 @@ pub fn verify_miller_loop(x: Fp, y: Fp, q_x: Fp2, q_y: Fp2, q_z: Fp2) -> ProofTu
 
     recursive_ml
 }
-pub fn verify_final_exponentiation(f: Fp12) -> (Fp12, CommonCircuitData<F, D>) {
+
+pub fn verify_final_exponentiation(f: Fp12) -> ProofTuple<F, C, D> {
     let (stark_final_exp, proof_final_exp, config_final_exp) =
         final_exponentiate_main::<F, C, D>(f);
     let recursive_final_exp = recursive_proof::<F, C, FeStark, C, D>(
@@ -57,63 +56,169 @@ pub fn verify_final_exponentiation(f: Fp12) -> (Fp12, CommonCircuitData<F, D>) {
         true,
     );
 
-    let final_exp_circuit_proof_data = recursive_final_exp.2;
+    recursive_final_exp
+}
 
-    (f, final_exp_circuit_proof_data)
+fn fp12_as_biguint_target(
+    builder: &mut CircuitBuilder<F, D>,
+    f_inputs: Vec<F>,
+    i: usize,
+) -> Vec<BigUintTarget> {
+    let mut f = Vec::new();
+    for _ in 0..12 {
+        f.push(builder.constant_biguint(&BigUint::new(
+            f_inputs[i..i + 12].iter().map(|x| x.0 as u32).collect(),
+        )));
+    }
+
+    f
+}
+
+fn fp12_as_fp_limbs(f_inputs: Vec<F>, i: usize) -> Vec<Fp> {
+    let mut f = Vec::new();
+    for _ in 0..12 {
+        f.push(Fp::get_fp_from_biguint(BigUint::new(
+            f_inputs[i..i + 12].iter().map(|x| x.0 as u32).collect(),
+        )));
+    }
+
+    f
+}
+
+fn vec_limbs_to_fixed_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    v.try_into()
+        .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
 }
 
 pub fn verify_all_proofs(
     builder: &mut CircuitBuilder<F, D>,
-    ml1_rec_proof: ProofTuple<F, C, D>,
-    // ml2_rec_proof: ProofTuple<F, C, D>,
-    // fin_exp1_public_inputs: CommonCircuitData<F, D>,
-    // fin_exp2_public_inputs: CommonCircuitData<F, D>,
-    // g1_generator: &PointG1Target,
-    // signature: &PointG2Target,
-    // public_key: &PointG1Target,
-    // hm_g2: &PointG2Target,
+    first_ml_proof: ProofTuple<F, C, D>,
+    second_ml_proof: ProofTuple<F, C, D>,
+    g1_generator: &PointG1Target,
+    signature: &PointG2Target,
+    public_key: &PointG1Target,
+    hm_g2: &PointG2Target,
 ) {
-    // let ml1_pt = builder.add_virtual_proof_with_pis(&ml1_rec_proof.2);
-    // let ml2_pt = builder.add_virtual_proof_with_pis(&ml2_rec_proof.2);
-    // let fin_exp1_pt = builder.add_virtual_proof_with_pis(&fin_exp1_public_inputs);
-    // let fin_exp2_pt = builder.add_virtual_proof_with_pis(&fin_exp2_public_inputs);
+    let first_ml_pub_inputs = first_ml_proof.0.public_inputs;
+    let second_ml_pub_inputs = second_ml_proof.0.public_inputs;
 
-    let ml1_rec_proof_public_inputs = ml1_rec_proof.0.public_inputs;
-    let g1_x_input = &ml1_rec_proof_public_inputs[0..12];
-    let g1_y_input = &ml1_rec_proof_public_inputs[12..24];
-    let g2_x_input_c0 = &ml1_rec_proof_public_inputs[24..36];
-    let g2_x_input_c1 = &ml1_rec_proof_public_inputs[36..48];
-    let g2_y_input_c0 = &ml1_rec_proof_public_inputs[48..60];
-    let g2_y_input_c1 = &ml1_rec_proof_public_inputs[60..72];
+    // FIRST MILLER LOOP
+    let g1_x_input = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[0..12]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g1_y_input = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[12..24]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
 
-    let g1_x_input = BigUint::new(g1_x_input.iter().map(|x| x.0 as u32).collect());
-    let g1_y_input = BigUint::new(g1_y_input.iter().map(|x| x.0 as u32).collect());
+    let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[24..36]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[36..48]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[48..60]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[60..72]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
 
-    let g2_x_input_c0 = BigUint::new(g2_x_input_c0.iter().map(|x| x.0 as u32).collect());
-    let g2_x_input_c1 = BigUint::new(g2_x_input_c1.iter().map(|x| x.0 as u32).collect());
-    let g2_y_input_c0 = BigUint::new(g2_y_input_c0.iter().map(|x| x.0 as u32).collect());
-    let g2_y_input_c1 = BigUint::new(g2_y_input_c1.iter().map(|x| x.0 as u32).collect());
-    let g2_x_bigt = [g2_x_input_c0.clone(), g2_x_input_c1];
-    let g2_y_bigt = [g2_y_input_c0, g2_y_input_c1];
+    builder.connect_biguint(&g1_generator[0], &g1_x_input);
+    builder.connect_biguint(&g1_generator[1], &g1_y_input);
 
-    let k = builder.constant_biguint(&g2_x_input_c0);
+    builder.connect_biguint(&signature[0][0], &g2_x_input_c0);
+    builder.connect_biguint(&signature[0][1], &g2_x_input_c1);
+    builder.connect_biguint(&signature[1][0], &g2_y_input_c0);
+    builder.connect_biguint(&signature[1][1], &g2_y_input_c1);
 
-    println!("g1_x_input is: {:?}", g1_x_input); // 3685416753713387016781088315183077757961620795782546409894578378688607592378376318836054947676345821548104185464507
-    println!("g1_y_input is: {:?}", g1_y_input); // 1339506544944476473020471379941921221584933875938349620426543736416511423956333506472724655353366534992391756441569
-    println!("g2_x_bigt is: {:?}", g2_x_bigt); // 4
-    println!("g2_y_bigt is: {:?}", g2_y_bigt); // 3
-}
+    // first miller loop Fp12 is 72 -> 72 + 144
+    // Fp12 - [Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp]
+    let first_ml_r = fp12_as_fp_limbs(first_ml_pub_inputs, 72);
+    let (_, proof_final_exp, _) =
+        final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(first_ml_r)));
+    let first_fin_exp_pub_inputs = proof_final_exp.public_inputs;
+    let first_fin_exp_pub_inputs = fp12_as_biguint_target(builder, first_fin_exp_pub_inputs, 144);
 
-pub fn signature_verification<
-    F: RichField + Extendable<D>,
-    C: GenericConfig<D, F = F>,
-    const D: usize,
->(
-    _builder: &mut CircuitBuilder<F, D>,
-    _msg: &[Target],
-    _signature: &PointG2Target,
-    _public_key: &PointG1Target,
-) {
+    // SECOND MILLER LOOP
+    let g1_x_input = builder.constant_biguint(&BigUint::new(
+        second_ml_pub_inputs[216..228]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g1_y_input = builder.constant_biguint(&BigUint::new(
+        second_ml_pub_inputs[228..240]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+
+    let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
+        second_ml_pub_inputs[240..252]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
+        second_ml_pub_inputs[252..264]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
+        second_ml_pub_inputs[264..276]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
+        second_ml_pub_inputs[276..288]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+
+    builder.connect_biguint(&public_key[0], &g1_x_input);
+    builder.connect_biguint(&public_key[1], &g1_y_input);
+
+    builder.connect_biguint(&hm_g2[0][0], &g2_x_input_c0);
+    builder.connect_biguint(&hm_g2[0][1], &g2_x_input_c1);
+    builder.connect_biguint(&hm_g2[1][0], &g2_y_input_c0);
+    builder.connect_biguint(&hm_g2[1][1], &g2_y_input_c1);
+
+    // second miller loop Fp12 is 288 -> 288 + 144
+    // Fp12 - [Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp]
+    let second_ml_r = fp12_as_fp_limbs(second_ml_pub_inputs.clone(), 72);
+    verify_final_exponentiation(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(
+        second_ml_r.clone(),
+    )));
+
+    let (_, proof_final_exp, _) =
+        final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(second_ml_r)));
+    let second_fin_exp_pub_inputs = proof_final_exp.public_inputs;
+    let second_fin_exp_pub_inputs = fp12_as_biguint_target(builder, second_fin_exp_pub_inputs, 144);
+
+    for i in 0..12 {
+        builder.connect_biguint(&first_fin_exp_pub_inputs[i], &second_fin_exp_pub_inputs[i]);
+    }
 }
 
 pub fn signature_aggregation(
@@ -125,11 +230,6 @@ pub fn signature_aggregation(
         point_addition = g2_add_unequal(builder, &point_addition, &g2_point);
     }
     point_addition
-}
-
-pub fn benchmark_curve_point_addition<F: RichField + Extendable<D>, const D: usize>(
-    _builder: &mut CircuitBuilder<F, D>,
-) {
 }
 
 #[cfg(test)]
@@ -145,16 +245,21 @@ mod tests {
 
     use crate::{
         fp2_plonky2::Fp2Target,
-        g2_plonky2::{g2_add_unequal, PointG2Target},
+        fp_plonky2::N,
+        g1_plonky2::PointG1Target,
+        g2_plonky2::g2_add_unequal,
+        hash_to_curve::hash_to_curve,
         miller_loop::MillerLoopStark,
-        native::{calc_pairing_precomp, Fp, Fp2},
-        signature_verification::verify_all_proofs,
+        native::{calc_pairing_precomp, miller_loop, Fp, Fp2},
+        signature_verification::{
+            calculate_signature, verify_all_proofs, verify_final_exponentiation,
+        },
     };
 
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    type MlStark = MillerLoopStark<F, D>;
+    type _MlStark = MillerLoopStark<F, D>;
 
     use super::verify_miller_loop;
     #[test]
@@ -197,7 +302,6 @@ mod tests {
         //         ).unwrap()),
         //     ]);
 
-        let N = 12;
         let ax_c0 = builder.add_virtual_biguint_target(N);
         let ax_c1 = builder.add_virtual_biguint_target(N);
         let ay_c0 = builder.add_virtual_biguint_target(N);
@@ -226,10 +330,30 @@ mod tests {
             plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();
         let mut builder =
             plonky2::plonk::circuit_builder::CircuitBuilder::<F, D>::new(circuit_config);
+
+        // G1 GENERATOR POINT
         let g1_generator_x: BigUint = BigUint::from_str("3685416753713387016781088315183077757961620795782546409894578378688607592378376318836054947676345821548104185464507").unwrap();
         let g1_generator_y: BigUint = BigUint::from_str("1339506544944476473020471379941921221584933875938349620426543736416511423956333506472724655353366534992391756441569").unwrap();
-        let g1_generator_x = Fp::get_fp_from_biguint(g1_generator_x);
-        let g1_generator_y = Fp::get_fp_from_biguint(g1_generator_y);
+        let g1_generator: PointG1Target = [
+            // pk_point_check
+            builder.constant_biguint(&g1_generator_x),
+            builder.constant_biguint(&g1_generator_y),
+        ];
+
+        // SIGNATURE
+        let msg = vec![0; 0];
+        let c0 = builder.add_virtual_biguint_target(N);
+        let c1 = builder.add_virtual_biguint_target(N);
+        let secret_key: Fp2Target = [c0, c1];
+        let msg_targets = builder.add_virtual_targets(msg.len());
+        let signature = calculate_signature(&mut builder, &msg_targets, &secret_key);
+
+        // PUBLIC KEY 0x8f2c5635a1305063c39326aeb55db809b24b05d0466ab1ac9885d729978b5337430fa17790486f263a7d94a8b2122adb
+        let public_key_as_g1_point = g1_generator.clone();
+
+        // MESSAGE AS G2 POINT
+        let hm_as_g2_point = hash_to_curve(&mut builder, &msg_targets);
+
         let g2_identity_x = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 4
         let g2_identity_y = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 5
         let g2_identity_inf = Fp2::zero();
@@ -249,7 +373,12 @@ mod tests {
         println!("ell_coeffs_z_c0 are: {:?}", ell_coeffs_z_c0);
         println!("ell_coeffs_z_c1 are: {:?}", ell_coeffs_z_c1);
         println!("----------------------------------------------------------------");
-        let x = verify_miller_loop(
+
+        let g1_generator_x = Fp::get_fp_from_biguint(g1_generator_x);
+        let g1_generator_y = Fp::get_fp_from_biguint(g1_generator_y);
+
+        // FIRST MILLER LOOP
+        let first_ml_proof = verify_miller_loop(
             g1_generator_x,
             g1_generator_y,
             g2_identity_x,
@@ -257,8 +386,30 @@ mod tests {
             g2_identity_inf,
         );
 
-        verify_all_proofs(&mut builder, x);
+        // SECOND MILLER LOOP
+        let second_ml_proof = verify_miller_loop(
+            g1_generator_x,
+            g1_generator_y,
+            g2_identity_x,
+            g2_identity_y,
+            g2_identity_inf,
+        );
 
+        verify_all_proofs(
+            &mut builder,
+            first_ml_proof,
+            second_ml_proof,
+            &g1_generator,
+            &signature,
+            &public_key_as_g1_point,
+            &hm_as_g2_point,
+        );
+
+        let now = Instant::now();
+        let pw = PartialWitness::new();
+        let data = builder.build::<C>();
+        let _proof = data.prove(pw);
+        println!("time: {:?}", now.elapsed());
         assert!(false)
     }
 }
