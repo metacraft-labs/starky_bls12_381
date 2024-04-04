@@ -65,10 +65,12 @@ fn fp12_as_biguint_target(
     i: usize,
 ) -> Vec<BigUintTarget> {
     let mut f = Vec::new();
+    let mut i = i;
     for _ in 0..12 {
         f.push(builder.constant_biguint(&BigUint::new(
             f_inputs[i..i + 12].iter().map(|x| x.0 as u32).collect(),
         )));
+        i += 12;
     }
 
     f
@@ -76,10 +78,12 @@ fn fp12_as_biguint_target(
 
 fn fp12_as_fp_limbs(f_inputs: Vec<F>, i: usize) -> Vec<Fp> {
     let mut f = Vec::new();
+    let mut i = i;
     for _ in 0..12 {
         f.push(Fp::get_fp_from_biguint(BigUint::new(
             f_inputs[i..i + 12].iter().map(|x| x.0 as u32).collect(),
         )));
+        i += 12;
     }
 
     f
@@ -155,42 +159,42 @@ pub fn verify_all_proofs(
     let (_, proof_final_exp, _) =
         final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(first_ml_r)));
     let first_fin_exp_pub_inputs = proof_final_exp.public_inputs;
-    let first_fin_exp_pub_inputs = fp12_as_biguint_target(builder, first_fin_exp_pub_inputs, 144);
+    let first_fin_exp_pub_inputs = fp12_as_biguint_target(builder, first_fin_exp_pub_inputs, 0);
 
     // SECOND MILLER LOOP
     let g1_x_input = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[216..228]
+        second_ml_pub_inputs[0..12]
             .iter()
             .map(|x| x.0 as u32)
             .collect(),
     ));
     let g1_y_input = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[228..240]
+        second_ml_pub_inputs[12..24]
             .iter()
             .map(|x| x.0 as u32)
             .collect(),
     ));
 
     let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[240..252]
+        second_ml_pub_inputs[24..36]
             .iter()
             .map(|x| x.0 as u32)
             .collect(),
     ));
     let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[252..264]
+        second_ml_pub_inputs[36..48]
             .iter()
             .map(|x| x.0 as u32)
             .collect(),
     ));
     let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[264..276]
+        second_ml_pub_inputs[48..60]
             .iter()
             .map(|x| x.0 as u32)
             .collect(),
     ));
     let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[276..288]
+        second_ml_pub_inputs[60..72]
             .iter()
             .map(|x| x.0 as u32)
             .collect(),
@@ -204,17 +208,14 @@ pub fn verify_all_proofs(
     builder.connect_biguint(&hm_g2[1][0], &g2_y_input_c0);
     builder.connect_biguint(&hm_g2[1][1], &g2_y_input_c1);
 
-    // second miller loop Fp12 is 288 -> 288 + 144
+    // second miller loop Fp12 is 72 -> 72 + 144
     // Fp12 - [Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp]
     let second_ml_r = fp12_as_fp_limbs(second_ml_pub_inputs.clone(), 72);
-    verify_final_exponentiation(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(
-        second_ml_r.clone(),
-    )));
 
     let (_, proof_final_exp, _) =
         final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(second_ml_r)));
     let second_fin_exp_pub_inputs = proof_final_exp.public_inputs;
-    let second_fin_exp_pub_inputs = fp12_as_biguint_target(builder, second_fin_exp_pub_inputs, 144);
+    let second_fin_exp_pub_inputs = fp12_as_biguint_target(builder, second_fin_exp_pub_inputs, 0);
 
     for i in 0..12 {
         builder.connect_biguint(&first_fin_exp_pub_inputs[i], &second_fin_exp_pub_inputs[i]);
@@ -248,14 +249,12 @@ mod tests {
     use plonky2_crypto::biguint::CircuitBuilderBiguint;
 
     use crate::{
-        fp2_plonky2::Fp2Target,
         fp_plonky2::N,
         g1_plonky2::PointG1Target,
         g2_plonky2::{g2_add_unequal, PointG2Target},
-        hash_to_curve::hash_to_curve,
         miller_loop::MillerLoopStark,
-        native::{calc_pairing_precomp, Fp, Fp2},
-        signature_verification::{calculate_signature, verify_all_proofs},
+        native::{Fp, Fp2},
+        signature_verification::verify_all_proofs,
     };
 
     const D: usize = 2;
@@ -327,6 +326,9 @@ mod tests {
     }
 
     #[test]
+    fn test_sml_ell_coeffs() {}
+
+    #[test]
     fn test_verify_miller_loop() {
         let circuit_config =
             plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();
@@ -343,24 +345,6 @@ mod tests {
 
         // FIRST MILLER LOOP
         let first_ml_proof = verify_miller_loop(
-            Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
-            Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
-            Fp2([
-                Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
-                Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
-            ]),
-            Fp2([
-                Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
-                Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
-            ]),
-            Fp2([
-                Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()), //change to zero
-                Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
-            ]),
-        );
-
-        // SECOND MILLER LOOP
-        let second_ml_proof = verify_miller_loop(
             Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
             Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
             Fp2([
@@ -370,6 +354,24 @@ mod tests {
             Fp2([
                 Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
                 Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()), //change to zero
+                Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+            ]),
+        );
+
+        // SECOND MILLER LOOP
+        let second_ml_proof = verify_miller_loop(
+            Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
+            Fp2([
+                Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
             ]),
             Fp2([
                 Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()), //change to zero
