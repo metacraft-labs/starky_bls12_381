@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use ark_bls12_381::G2Affine;
 use num_bigint::BigUint;
 use plonky2::{
     field::extension::Extendable,
@@ -18,7 +21,7 @@ use crate::{
     g2_plonky2::{g2_add_unequal, g2_scalar_mul, PointG2Target},
     hash_to_curve::hash_to_curve,
     miller_loop::MillerLoopStark,
-    native::{Fp, Fp12, Fp2},
+    native::{calc_pairing_precomp, Fp, Fp12, Fp2},
 };
 
 const D: usize = 2;
@@ -94,6 +97,93 @@ fn vec_limbs_to_fixed_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
         .unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
 }
 
+pub fn calculate_ell_coeffs(
+    builder: &mut CircuitBuilder<F, D>,
+    signature: G2Affine,
+) -> PointG2Target {
+    let ell_coeffs = calc_pairing_precomp(
+        Fp2([
+            Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
+
+    [
+        [
+            builder.constant_biguint(&ell_coeffs[0][0].0[0].to_biguint()),
+            builder.constant_biguint(&ell_coeffs[0][0].0[1].to_biguint()),
+        ],
+        [
+            builder.constant_biguint(&ell_coeffs[0][1].0[0].to_biguint()),
+            builder.constant_biguint(&ell_coeffs[0][1].0[1].to_biguint()),
+        ],
+    ]
+}
+
+pub fn test_fml_output(
+    builder: &mut CircuitBuilder<F, D>,
+    first_ml_proof: ProofTuple<F, C, D>,
+    g1_generator: &PointG1Target,
+    signature: &PointG2Target,
+) {
+    let first_ml_pub_inputs = first_ml_proof.0.public_inputs;
+
+    // FIRST MILLER LOOP
+    let g1_x_input = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[0..12]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g1_y_input = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[12..24]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+
+    let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[24..36]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[36..48]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[48..60]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+    let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
+        first_ml_pub_inputs[60..72]
+            .iter()
+            .map(|x| x.0 as u32)
+            .collect(),
+    ));
+
+    builder.connect_biguint(&g1_generator[0], &g1_x_input);
+    builder.connect_biguint(&g1_generator[1], &g1_y_input);
+
+    builder.connect_biguint(&signature[0][0], &g2_x_input_c0);
+    builder.connect_biguint(&signature[0][1], &g2_x_input_c1);
+    builder.connect_biguint(&signature[1][0], &g2_y_input_c0);
+    builder.connect_biguint(&signature[1][1], &g2_y_input_c1);
+}
+
 pub fn verify_all_proofs(
     builder: &mut CircuitBuilder<F, D>,
     first_ml_proof: ProofTuple<F, C, D>,
@@ -148,10 +238,10 @@ pub fn verify_all_proofs(
     builder.connect_biguint(&g1_generator[0], &g1_x_input);
     builder.connect_biguint(&g1_generator[1], &g1_y_input);
 
-    builder.connect_biguint(&signature[0][0], &g2_x_input_c0);
-    builder.connect_biguint(&signature[0][1], &g2_x_input_c1);
-    builder.connect_biguint(&signature[1][0], &g2_y_input_c0);
-    builder.connect_biguint(&signature[1][1], &g2_y_input_c1);
+    // builder.connect_biguint(&signature[0][0], &g2_x_input_c0);
+    // builder.connect_biguint(&signature[0][1], &g2_x_input_c1);
+    // builder.connect_biguint(&signature[1][0], &g2_y_input_c0);
+    // builder.connect_biguint(&signature[1][1], &g2_y_input_c1);
 
     // first miller loop Fp12 is 72 -> 72 + 144
     // Fp12 - [Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp]
@@ -253,8 +343,8 @@ mod tests {
         g1_plonky2::PointG1Target,
         g2_plonky2::{g2_add_unequal, PointG2Target},
         miller_loop::MillerLoopStark,
-        native::{Fp, Fp2},
-        signature_verification::verify_all_proofs,
+        native::{calc_pairing_precomp, Fp, Fp2},
+        signature_verification::{calculate_ell_coeffs, verify_all_proofs},
     };
 
     const D: usize = 2;
@@ -262,7 +352,7 @@ mod tests {
     type F = <C as GenericConfig<D>>::F;
     type _MlStark = MillerLoopStark<F, D>;
 
-    use super::verify_miller_loop;
+    use super::{test_fml_output, verify_miller_loop};
     #[test]
     fn test_g2_point_addition() {
         let circuit_config =
@@ -326,7 +416,49 @@ mod tests {
     }
 
     #[test]
-    fn test_sml_ell_coeffs() {}
+    fn test_fml_ell_coeffs() {
+        let circuit_config =
+            plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();
+        let mut builder =
+            plonky2::plonk::circuit_builder::CircuitBuilder::<F, D>::new(circuit_config);
+
+        let g1 = G1Affine::generator();
+        let signature = G2Affine::generator();
+
+        let first_ml_proof = verify_miller_loop(
+            Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
+            Fp2([
+                Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+                Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+            ]),
+        );
+
+        // G1 GENERATOR POINT
+        let g1_generator: PointG1Target = [
+            builder.constant_biguint(&g1.x.to_string().parse::<BigUint>().unwrap()),
+            builder.constant_biguint(&g1.y.to_string().parse::<BigUint>().unwrap()),
+        ];
+
+        // SIGNATURE
+        let signature: PointG2Target = calculate_ell_coeffs(&mut builder, signature);
+
+        test_fml_output(&mut builder, first_ml_proof, &g1_generator, &signature);
+
+        let now = Instant::now();
+        let pw = PartialWitness::new();
+        let data = builder.build::<C>();
+        let _proof = data.prove(pw);
+        println!("time: {:?}", now.elapsed());
+    }
 
     #[test]
     fn test_verify_miller_loop() {
