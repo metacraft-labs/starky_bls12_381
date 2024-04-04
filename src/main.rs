@@ -55,105 +55,105 @@ fn main_thread() {
 
     assert_eq!(pk_message, g1_signature);
 
-    // let result_message = miller_loop(
-    //     Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
-    //     Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
-    //         Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
-    //     ]),
-    // );
+    let result_message = miller_loop(
+        Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
 
-    // let result_signature = miller_loop(
-    //     Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
-    //     Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
-    //         Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
-    //     ]),
-    // );
+    let result_signature = miller_loop(
+        Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
 
-    // let pk_message_native = result_message.final_exponentiate();
-    // let g1_signature_native = result_signature.final_exponentiate();
+    let pk_message_native = result_message.final_exponentiate();
+    let g1_signature_native = result_signature.final_exponentiate();
 
-    // assert_eq!(pk_message_native, g1_signature_native);
+    assert_eq!(pk_message_native, g1_signature_native);
 
-    // println!("Starting the circuits now");
+    println!("Starting the circuits now");
 
-    // let (stark_ml1, proof_ml1, config_ml1) = miller_loop_main::<F, C, D>(
-    //     Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
-    //     Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
-    //         Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
-    //     ]),
-    // );
-    // let recursive_ml1 =
-    //     recursive_proof::<F, C, MlStark, C, D>(stark_ml1, proof_ml1.clone(), &config_ml1, true);
+    let (stark_ml1, proof_ml1, config_ml1) = miller_loop_main::<F, C, D>(
+        Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
+    let recursive_ml1 =
+        recursive_proof::<F, C, MlStark, C, D>(stark_ml1, proof_ml1.clone(), &config_ml1, true);
 
-    // println!("{:?}", recursive_ml1.0.public_inputs);
+    println!("{:?}", recursive_ml1.0.public_inputs);
 
-    // println!("second miller loop");
-    // let (stark_ml2, proof_ml2, config_ml2) = miller_loop_main::<F, C, D>(
-    //     Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
-    //     Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
-    //         Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
-    //     ]),
-    //     Fp2([
-    //         Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
-    //         Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
-    //     ]),
-    // );
-    // let recursive_ml2 =
-    //     recursive_proof::<F, C, MlStark, C, D>(stark_ml2, proof_ml2.clone(), &config_ml2, true);
+    println!("second miller loop");
+    let (stark_ml2, proof_ml2, config_ml2) = miller_loop_main::<F, C, D>(
+        Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
+    let recursive_ml2 =
+        recursive_proof::<F, C, MlStark, C, D>(stark_ml2, proof_ml2.clone(), &config_ml2, true);
 
-    // let (stark_final_exp, proof_final_exp, config_final_exp) =
-    //     final_exponentiate_main::<F, C, D>(result_message);
-    // let message_exp = recursive_proof::<F, C, FeStark, C, D>(
-    //     stark_final_exp,
-    //     proof_final_exp,
-    //     &config_final_exp,
-    //     true,
-    // );
+    let (stark_final_exp, proof_final_exp, config_final_exp) =
+        final_exponentiate_main::<F, C, D>(result_message);
+    let message_exp = recursive_proof::<F, C, FeStark, C, D>(
+        stark_final_exp,
+        proof_final_exp,
+        &config_final_exp,
+        true,
+    );
 
-    // let (stark_final_exp, proof_final_exp, config_final_exp) =
-    //     final_exponentiate_main::<F, C, D>(result_signature);
-    // let signiture_exp = recursive_proof::<F, C, FeStark, C, D>(
-    //     stark_final_exp,
-    //     proof_final_exp,
-    //     &config_final_exp,
-    //     true,
-    // );
+    let (stark_final_exp, proof_final_exp, config_final_exp) =
+        final_exponentiate_main::<F, C, D>(result_signature);
+    let signiture_exp = recursive_proof::<F, C, FeStark, C, D>(
+        stark_final_exp,
+        proof_final_exp,
+        &config_final_exp,
+        true,
+    );
 }
 
 fn main() {

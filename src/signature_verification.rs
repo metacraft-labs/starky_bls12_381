@@ -237,6 +237,9 @@ pub fn signature_aggregation(
 mod tests {
     use std::{str::FromStr, time::Instant};
 
+    use ark_bls12_381::{Fr, G1Affine, G2Affine};
+    use ark_ec::AffineRepr;
+    use ark_std::UniformRand;
     use num_bigint::BigUint;
     use plonky2::{
         iop::witness::PartialWitness,
@@ -330,68 +333,133 @@ mod tests {
         let mut builder =
             plonky2::plonk::circuit_builder::CircuitBuilder::<F, D>::new(circuit_config);
 
-        // G1 GENERATOR POINT
-        let g1_generator_x: BigUint = BigUint::from_str("3685416753713387016781088315183077757961620795782546409894578378688607592378376318836054947676345821548104185464507").unwrap();
-        let g1_generator_y: BigUint = BigUint::from_str("1339506544944476473020471379941921221584933875938349620426543736416511423956333506472724655353366534992391756441569").unwrap();
-        let g1_generator: PointG1Target = [
-            // pk_point_check
-            builder.constant_biguint(&g1_generator_x),
-            builder.constant_biguint(&g1_generator_y),
-        ];
-        let g1_generator_x = Fp::get_fp_from_biguint(g1_generator_x);
-        let g1_generator_y = Fp::get_fp_from_biguint(g1_generator_y);
+        let rng = &mut ark_std::rand::thread_rng();
 
-        // SIGNATURE GENERATION
-        let g2_identity_x = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 4
-        let g2_identity_y = Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one() + Fp2::one(); // 5
-        let g2_identity_inf = Fp2::zero();
-
-        let msg = vec![0; 0];
-        let c0 = builder.add_virtual_biguint_target(N);
-        let c1 = builder.add_virtual_biguint_target(N);
-        let secret_key: Fp2Target = [c0, c1];
-        let msg_targets = builder.add_virtual_targets(msg.len());
-        let signature: PointG2Target = calculate_signature(&mut builder, &msg_targets, &secret_key);
-
-        // PUBLIC KEY 0x8f2c5635a1305063c39326aeb55db809b24b05d0466ab1ac9885d729978b5337430fa17790486f263a7d94a8b2122adb
-        let public_key_as_g1_point = g1_generator.clone();
-
-        // MESSAGE AS G2 POINT
-        let hm_as_g2_point = hash_to_curve(&mut builder, &msg_targets);
-
-        let ell_coeffs = calc_pairing_precomp(g2_identity_x, g2_identity_y, g2_identity_inf);
-        let ell_coeffs_x_c0 = ell_coeffs[0][0].0[0].to_biguint();
-        let ell_coeffs_x_c1 = ell_coeffs[0][0].0[1].to_biguint();
-        let ell_coeffs_y_c0 = ell_coeffs[0][1].0[0].to_biguint();
-        let ell_coeffs_y_c1 = ell_coeffs[0][1].0[1].to_biguint();
-        let ell_coeffs_z_c0 = ell_coeffs[0][2].0[0].to_biguint();
-        let ell_coeffs_z_c1 = ell_coeffs[0][2].0[1].to_biguint();
-        println!("ell_coeffs.len() is: {:?}", ell_coeffs.len());
-        println!("ell_coeffs_x_c0 are: {:?}", ell_coeffs_x_c0);
-        println!("ell_coeffs_x_c1 are: {:?}", ell_coeffs_x_c1);
-        println!("ell_coeffs_y_c0 are: {:?}", ell_coeffs_y_c0);
-        println!("ell_coeffs_y_c1 are: {:?}", ell_coeffs_y_c1);
-        println!("ell_coeffs_z_c0 are: {:?}", ell_coeffs_z_c0);
-        println!("ell_coeffs_z_c1 are: {:?}", ell_coeffs_z_c1);
-        println!("----------------------------------------------------------------");
+        let g1 = G1Affine::generator();
+        let sk: Fr = Fr::rand(rng);
+        let pk = Into::<G1Affine>::into(g1 * sk);
+        let message = G2Affine::rand(rng);
+        let signature = Into::<G2Affine>::into(message * sk);
 
         // FIRST MILLER LOOP
         let first_ml_proof = verify_miller_loop(
-            g1_generator_x,
-            g1_generator_y,
-            g2_identity_x,
-            g2_identity_y,
-            g2_identity_inf,
+            Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
+            Fp2([
+                Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()), //change to zero
+                Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+            ]),
         );
 
         // SECOND MILLER LOOP
         let second_ml_proof = verify_miller_loop(
-            g1_generator_x,
-            g1_generator_y,
-            g2_identity_x,
-            g2_identity_y,
-            g2_identity_inf,
+            Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
+            Fp2([
+                Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
+                Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
+            ]),
+            Fp2([
+                Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()), //change to zero
+                Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+            ]),
         );
+
+        // G1 GENERATOR POINT
+        let g1_generator: PointG1Target = [
+            builder.constant_biguint(&g1.x.to_string().parse::<BigUint>().unwrap()),
+            builder.constant_biguint(&g1.y.to_string().parse::<BigUint>().unwrap()),
+        ];
+
+        // SIGNATURE
+        let signature: PointG2Target = [
+            [
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(
+                        signature.x.c0.to_string().parse::<BigUint>().unwrap(),
+                    )
+                    .to_biguint(),
+                ),
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(
+                        signature.x.c1.to_string().parse::<BigUint>().unwrap(),
+                    )
+                    .to_biguint(),
+                ),
+            ],
+            [
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(
+                        signature.y.c0.to_string().parse::<BigUint>().unwrap(),
+                    )
+                    .to_biguint(),
+                ),
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(
+                        signature.y.c1.to_string().parse::<BigUint>().unwrap(),
+                    )
+                    .to_biguint(),
+                ),
+            ],
+        ];
+
+        // PUBLIC KEY
+        let public_key: PointG1Target = [
+            builder.constant_biguint(&pk.x.to_string().parse::<BigUint>().unwrap()),
+            builder.constant_biguint(&pk.y.to_string().parse::<BigUint>().unwrap()),
+        ];
+
+        // MESSAGE AS G2 POINT
+        let message: PointG2Target = [
+            [
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap())
+                        .to_biguint(),
+                ),
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap())
+                        .to_biguint(),
+                ),
+            ],
+            [
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap())
+                        .to_biguint(),
+                ),
+                builder.constant_biguint(
+                    &Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap())
+                        .to_biguint(),
+                ),
+            ],
+        ];
+
+        // let ell_coeffs = calc_pairing_precomp(g2_identity_x, g2_identity_y, g2_identity_inf);
+        // let ell_coeffs_x_c0 = ell_coeffs[0][0].0[0].to_biguint();
+        // let ell_coeffs_x_c1 = ell_coeffs[0][0].0[1].to_biguint();
+        // let ell_coeffs_y_c0 = ell_coeffs[0][1].0[0].to_biguint();
+        // let ell_coeffs_y_c1 = ell_coeffs[0][1].0[1].to_biguint();
+        // let ell_coeffs_z_c0 = ell_coeffs[0][2].0[0].to_biguint();
+        // let ell_coeffs_z_c1 = ell_coeffs[0][2].0[1].to_biguint();
+        // println!("ell_coeffs.len() is: {:?}", ell_coeffs.len());
+        // println!("ell_coeffs_x_c0 are: {:?}", ell_coeffs_x_c0);
+        // println!("ell_coeffs_x_c1 are: {:?}", ell_coeffs_x_c1);
+        // println!("ell_coeffs_y_c0 are: {:?}", ell_coeffs_y_c0);
+        // println!("ell_coeffs_y_c1 are: {:?}", ell_coeffs_y_c1);
+        // println!("ell_coeffs_z_c0 are: {:?}", ell_coeffs_z_c0);
+        // println!("ell_coeffs_z_c1 are: {:?}", ell_coeffs_z_c1);
+        println!("----------------------------------------------------------------");
 
         verify_all_proofs(
             &mut builder,
@@ -399,8 +467,8 @@ mod tests {
             second_ml_proof,
             &g1_generator,
             &signature,
-            &public_key_as_g1_point,
-            &hm_as_g2_point,
+            &public_key,
+            &message,
         );
 
         let now = Instant::now();
@@ -408,6 +476,6 @@ mod tests {
         let data = builder.build::<C>();
         let _proof = data.prove(pw);
         println!("time: {:?}", now.elapsed());
-        assert!(false)
+        // assert!(false)
     }
 }
