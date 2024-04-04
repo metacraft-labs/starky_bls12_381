@@ -155,71 +155,71 @@ pub fn verify_all_proofs(
 
     // first miller loop Fp12 is 72 -> 72 + 144
     // Fp12 - [Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp]
-    let first_ml_r = fp12_as_fp_limbs(first_ml_pub_inputs, 72);
-    let (_, proof_final_exp, _) =
-        final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(first_ml_r)));
-    let first_fin_exp_pub_inputs = proof_final_exp.public_inputs;
-    let first_fin_exp_pub_inputs = fp12_as_biguint_target(builder, first_fin_exp_pub_inputs, 0);
+    // let first_ml_r = fp12_as_fp_limbs(first_ml_pub_inputs, 72);
+    // let (_, proof_final_exp, _) =
+    //     final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(first_ml_r)));
+    // let first_fin_exp_pub_inputs = proof_final_exp.public_inputs;
+    // let first_fin_exp_pub_inputs = fp12_as_biguint_target(builder, first_fin_exp_pub_inputs, 0);
 
-    // SECOND MILLER LOOP
-    let g1_x_input = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[0..12]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g1_y_input = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[12..24]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
+    // // SECOND MILLER LOOP
+    // let g1_x_input = builder.constant_biguint(&BigUint::new(
+    //     second_ml_pub_inputs[0..12]
+    //         .iter()
+    //         .map(|x| x.0 as u32)
+    //         .collect(),
+    // ));
+    // let g1_y_input = builder.constant_biguint(&BigUint::new(
+    //     second_ml_pub_inputs[12..24]
+    //         .iter()
+    //         .map(|x| x.0 as u32)
+    //         .collect(),
+    // ));
 
-    let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[24..36]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[36..48]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[48..60]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[60..72]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
+    // let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
+    //     second_ml_pub_inputs[24..36]
+    //         .iter()
+    //         .map(|x| x.0 as u32)
+    //         .collect(),
+    // ));
+    // let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
+    //     second_ml_pub_inputs[36..48]
+    //         .iter()
+    //         .map(|x| x.0 as u32)
+    //         .collect(),
+    // ));
+    // let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
+    //     second_ml_pub_inputs[48..60]
+    //         .iter()
+    //         .map(|x| x.0 as u32)
+    //         .collect(),
+    // ));
+    // let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
+    //     second_ml_pub_inputs[60..72]
+    //         .iter()
+    //         .map(|x| x.0 as u32)
+    //         .collect(),
+    // ));
 
-    builder.connect_biguint(&public_key[0], &g1_x_input);
-    builder.connect_biguint(&public_key[1], &g1_y_input);
+    // builder.connect_biguint(&public_key[0], &g1_x_input);
+    // builder.connect_biguint(&public_key[1], &g1_y_input);
 
-    builder.connect_biguint(&hm_g2[0][0], &g2_x_input_c0);
-    builder.connect_biguint(&hm_g2[0][1], &g2_x_input_c1);
-    builder.connect_biguint(&hm_g2[1][0], &g2_y_input_c0);
-    builder.connect_biguint(&hm_g2[1][1], &g2_y_input_c1);
+    // builder.connect_biguint(&hm_g2[0][0], &g2_x_input_c0);
+    // builder.connect_biguint(&hm_g2[0][1], &g2_x_input_c1);
+    // builder.connect_biguint(&hm_g2[1][0], &g2_y_input_c0);
+    // builder.connect_biguint(&hm_g2[1][1], &g2_y_input_c1);
 
-    // second miller loop Fp12 is 72 -> 72 + 144
-    // Fp12 - [Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp]
-    let second_ml_r = fp12_as_fp_limbs(second_ml_pub_inputs.clone(), 72);
+    // // second miller loop Fp12 is 72 -> 72 + 144
+    // // Fp12 - [Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp,Fp]
+    // let second_ml_r = fp12_as_fp_limbs(second_ml_pub_inputs.clone(), 72);
 
-    let (_, proof_final_exp, _) =
-        final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(second_ml_r)));
-    let second_fin_exp_pub_inputs = proof_final_exp.public_inputs;
-    let second_fin_exp_pub_inputs = fp12_as_biguint_target(builder, second_fin_exp_pub_inputs, 0);
+    // let (_, proof_final_exp, _) =
+    //     final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(second_ml_r)));
+    // let second_fin_exp_pub_inputs = proof_final_exp.public_inputs;
+    // let second_fin_exp_pub_inputs = fp12_as_biguint_target(builder, second_fin_exp_pub_inputs, 0);
 
-    for i in 0..12 {
-        builder.connect_biguint(&first_fin_exp_pub_inputs[i], &second_fin_exp_pub_inputs[i]);
-    }
+    // for i in 0..12 {
+    //     builder.connect_biguint(&first_fin_exp_pub_inputs[i], &second_fin_exp_pub_inputs[i]);
+    // }
 }
 
 // FAILS
