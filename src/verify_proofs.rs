@@ -283,6 +283,18 @@ mod tests {
     use super::{verify_miller_loop, verify_proofs};
 
     #[test]
+    fn test_point_addition() {
+        let circuit_config =
+            plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();
+        let mut builder =
+            plonky2::plonk::circuit_builder::CircuitBuilder::<F, D>::new(circuit_config);
+
+        let rng = &mut ark_std::rand::thread_rng();
+        let g1 = G1Affine::rand(rng);
+        let g2 = G2Affine::rand(rng);
+    }
+
+    #[test]
     fn test_verify_proofs() {
         let circuit_config =
             plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();

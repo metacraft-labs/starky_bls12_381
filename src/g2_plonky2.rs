@@ -1,16 +1,55 @@
 use num_bigint::{BigUint, ToBigUint};
-use plonky2::{field::extension::Extendable, hash::hash_types::RichField, iop::{generator::SimpleGenerator, target::{BoolTarget, Target}}, plonk::circuit_builder::CircuitBuilder};
-use plonky2_crypto::{biguint::{BigUintTarget, CircuitBuilderBiguint, GeneratedValuesBigUint, WitnessBigUint}, u32::arithmetic_u32::{CircuitBuilderU32, U32Target}};
+use plonky2::{
+    field::extension::Extendable,
+    hash::hash_types::RichField,
+    iop::{
+        generator::SimpleGenerator,
+        target::{BoolTarget, Target},
+    },
+    plonk::circuit_builder::CircuitBuilder,
+};
+use plonky2_crypto::{
+    biguint::{BigUintTarget, CircuitBuilderBiguint, GeneratedValuesBigUint, WitnessBigUint},
+    u32::arithmetic_u32::{CircuitBuilderU32, U32Target},
+};
 
-use crate::{fp2_plonky2::{add_fp2, is_equal, mul_fp2, negate_fp2, range_check_fp2, sub_fp2, Fp2Target}, fp_plonky2::N, native::{get_bls_12_381_parameter, modulus, Fp, Fp2}};
+use crate::{
+    fp2_plonky2::{
+        add_fp2, inv_fp2, is_equal, mul_fp2, negate_fp2, range_check_fp2, sub_fp2, Fp2Target,
+    },
+    fp_plonky2::N,
+    native::{get_bls_12_381_parameter, modulus, Fp, Fp2},
+};
 
 pub type PointG2Target = [Fp2Target; 2];
 
 pub const SIG_LEN: usize = 96;
 
-pub fn g2_add_unequal<F: RichField + Extendable<D>,
-    const D: usize
->(
+pub fn my_g2_add<F: RichField + Extendable<D>, const D: usize>(
+    builder: &mut CircuitBuilder<F, D>,
+    a: &PointG2Target,
+    b: &PointG2Target,
+) -> PointG2Target {
+    let x1 = &a[0];
+    let y1 = &a[1];
+    let x2 = &b[0];
+    let y2 = &b[1];
+
+    let u = sub_fp2(builder, &y2, &y1);
+    let v = sub_fp2(builder, &x2, &x1);
+    let v_inv = inv_fp2(builder, &v);
+    let s = mul_fp2(builder, &u, &v_inv);
+    let s_squared = mul_fp2(builder, &s, &s);
+    let x_sum = add_fp2(builder, &x2, &x1);
+    let x3 = sub_fp2(builder, &s_squared, &x_sum);
+    let x_diff = sub_fp2(builder, &x1, &x3);
+    let prod = mul_fp2(builder, &s, &x_diff);
+    let y3 = sub_fp2(builder, &prod, &y1);
+
+    [x3, y3]
+}
+
+pub fn g2_add_unequal<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &PointG2Target,
     b: &PointG2Target,
@@ -32,16 +71,16 @@ pub fn g2_add_unequal<F: RichField + Extendable<D>,
     range_check_fp2(builder, &out[0]);
     range_check_fp2(builder, &out[1]);
     let dx_sq = mul_fp2(builder, &dx, &dx);
-    let dy_sq = mul_fp2(builder,&dy, &dy);
+    let dy_sq = mul_fp2(builder, &dy, &dy);
 
-    let x1x2= add_fp2(builder, &a[0], &b[0]);
+    let x1x2 = add_fp2(builder, &a[0], &b[0]);
     let x1x2x3 = add_fp2(builder, &x1x2, &out[0]);
     let cubic = mul_fp2(builder, &x1x2x3, &dx_sq);
 
     let cubic_dysq = sub_fp2(builder, &cubic, &dy_sq);
     let cubic_dysq_check = crate::fp2_plonky2::is_zero(builder, &cubic_dysq);
     builder.assert_one(cubic_dysq_check.target);
-    
+
     let y1y3 = add_fp2(builder, &a[1], &out[1]);
     let y1y3dx = mul_fp2(builder, &y1y3, &dx);
 
@@ -54,15 +93,12 @@ pub fn g2_add_unequal<F: RichField + Extendable<D>,
     out
 }
 
-pub fn g2_double<F: RichField + Extendable<D>,
-    const D: usize
->(
+pub fn g2_double<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &PointG2Target,
     iso_3_a: &Fp2Target,
     iso_3_b: &Fp2Target,
 ) -> PointG2Target {
-
     let outx_c0 = builder.add_virtual_biguint_target(N);
     let outx_c1 = builder.add_virtual_biguint_target(N);
     let outy_c0 = builder.add_virtual_biguint_target(N);
@@ -75,7 +111,7 @@ pub fn g2_double<F: RichField + Extendable<D>,
     });
     range_check_fp2(builder, &out[0]);
     range_check_fp2(builder, &out[1]);
-    
+
     // point on tangent
     let x_sq = mul_fp2(builder, &a[0], &a[0]);
     let x_sq2 = add_fp2(builder, &x_sq, &x_sq);
@@ -109,9 +145,7 @@ pub fn g2_double<F: RichField + Extendable<D>,
     out
 }
 
-pub fn g2_add<F: RichField + Extendable<D>,
-    const D: usize
->(
+pub fn g2_add<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     a: &PointG2Target,
     is_infinity_a: BoolTarget,
@@ -120,13 +154,22 @@ pub fn g2_add<F: RichField + Extendable<D>,
     iso_3_a: &Fp2Target,
     iso_3_b: &Fp2Target,
 ) -> PointG2Target {
-    let x_equal = crate::fp2_plonky2::is_equal(builder, &a[0], &b[0]);
-    let y_equal = crate::fp2_plonky2::is_equal(builder, &a[1], &b[1]);
-    let do_double = builder.and(x_equal, y_equal);
+    let x_equal = crate::fp2_plonky2::is_equal(builder, &a[0], &b[0]); // compares x of a & b -> true/false
+    let y_equal = crate::fp2_plonky2::is_equal(builder, &a[1], &b[1]); // compares y of a & b -> true/false
+    let do_double = builder.and(x_equal, y_equal); // x && y are equal
+
+    // empty target point b
     let add_input_b = [
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
     ];
+
     for i in 0..12 {
         if i == 0 {
             let zero = builder.zero();
@@ -152,60 +195,83 @@ pub fn g2_add<F: RichField + Extendable<D>,
     let out_inf = builder.or(both_inf, inverse);
     builder.assert_zero(out_inf.target);
     let add_or_double_select = [
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
     ];
     for i in 0..2 {
         for j in 0..2 {
             for k in 0..N {
-                let s = builder.select(do_double, doubling[i][j].limbs[k].0, addition[i][j].limbs[k].0);
+                let s = builder.select(
+                    do_double,
+                    doubling[i][j].limbs[k].0,
+                    addition[i][j].limbs[k].0,
+                );
                 builder.connect(add_or_double_select[i][j].limbs[k].0, s);
             }
         }
     }
     let a_inf_select = [
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
     ];
     for i in 0..2 {
         for j in 0..2 {
             for k in 0..N {
-                let s = builder.select(is_infinity_a, b[i][j].limbs[k].0, add_or_double_select[i][j].limbs[k].0);
+                let s = builder.select(
+                    is_infinity_a,
+                    b[i][j].limbs[k].0,
+                    add_or_double_select[i][j].limbs[k].0,
+                );
                 builder.connect(a_inf_select[i][j].limbs[k].0, s);
             }
         }
     }
     let b_inf_select = [
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
     ];
     for i in 0..2 {
         for j in 0..2 {
             for k in 0..N {
-                let s = builder.select(is_infinity_b, a[i][j].limbs[k].0, a_inf_select[i][j].limbs[k].0);
+                let s = builder.select(
+                    is_infinity_b,
+                    a[i][j].limbs[k].0,
+                    a_inf_select[i][j].limbs[k].0,
+                );
                 builder.connect(b_inf_select[i][j].limbs[k].0, s);
             }
         }
     }
-    
+
     b_inf_select
 }
 
-pub fn g2_negate<F: RichField + Extendable<D>,
-    const D: usize,
->(
+pub fn g2_negate<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     p: &PointG2Target,
 ) -> PointG2Target {
-    [
-        p[0].clone(),
-        negate_fp2(builder, &p[1])
-    ]
+    [p[0].clone(), negate_fp2(builder, &p[1])]
 }
 
-pub fn g2_scalar_mul<F: RichField + Extendable<D>,
-    const D: usize,
->(
+pub fn g2_scalar_mul<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     p: &PointG2Target,
     iso_3_b: &Fp2Target,
@@ -215,12 +281,18 @@ pub fn g2_scalar_mul<F: RichField + Extendable<D>,
         builder.constant_biguint(&0.to_biguint().unwrap()),
     ];
     let mut r = [
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
-        [builder.add_virtual_biguint_target(N), builder.add_virtual_biguint_target(N)],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
+        [
+            builder.add_virtual_biguint_target(N),
+            builder.add_virtual_biguint_target(N),
+        ],
     ];
     let fals = builder._false();
     for i in (0..get_bls_12_381_parameter().bits()).rev() {
-        if i==get_bls_12_381_parameter().bits()-1 {
+        if i == get_bls_12_381_parameter().bits() - 1 {
             for idx in 0..2 {
                 for jdx in 0..2 {
                     builder.connect_biguint(&r[idx][jdx], &p[idx][jdx]);
@@ -238,13 +310,11 @@ pub fn g2_scalar_mul<F: RichField + Extendable<D>,
     r
 }
 
-pub fn signature_point_check<F: RichField + Extendable<D>,
-    const D: usize,
->(
+pub fn signature_point_check<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     point: &PointG2Target,
     sig: &[Target; SIG_LEN],
-){
+) {
     let msbs = builder.split_le(sig[0], 8);
     let bflag = msbs[6];
     builder.assert_zero(bflag.target);
@@ -254,12 +324,19 @@ pub fn signature_point_check<F: RichField + Extendable<D>,
     let (x0, x1, y0, y1) = (&point[0][0], &point[0][1], &point[1][0], &point[1][1]);
     let y1_zero = crate::fp_plonky2::is_zero(builder, &y1);
     let zero = builder.zero_u32();
-    let y_select_limbs: Vec<U32Target> = (0..N).into_iter().map(|i| U32Target(builder.select(
-        y1_zero,
-        y0.limbs.get(i).unwrap_or(&zero).0,
-        y1.limbs.get(i).unwrap_or(&zero).0,
-    ))).collect();
-    let y_select = BigUintTarget { limbs: y_select_limbs };
+    let y_select_limbs: Vec<U32Target> = (0..N)
+        .into_iter()
+        .map(|i| {
+            U32Target(builder.select(
+                y1_zero,
+                y0.limbs.get(i).unwrap_or(&zero).0,
+                y1.limbs.get(i).unwrap_or(&zero).0,
+            ))
+        })
+        .collect();
+    let y_select = BigUintTarget {
+        limbs: y_select_limbs,
+    };
     let two = builder.constant_biguint(&2u32.into());
     let y_select_2 = builder.mul_biguint(&y_select, &two);
     let p = builder.constant_biguint(&modulus());
@@ -267,38 +344,57 @@ pub fn signature_point_check<F: RichField + Extendable<D>,
     for i in 0..y_select_2_p.limbs.len() {
         if i == 0 {
             builder.connect(aflag.target, y_select_2_p.limbs[i].0);
-        }
-        else {
+        } else {
             builder.connect_u32(y_select_2_p.limbs[i], zero);
         }
     }
 
-    let z1_limbs: Vec<U32Target> = sig[0..SIG_LEN/2].chunks(4).into_iter().map(|chunk| {
-        let zero = builder.zero();
-        let factor = builder.constant(F::from_canonical_u32(256));
-        U32Target(chunk.iter().fold(zero, |acc, c| builder.mul_add(acc, factor, *c)))
-    }).rev().collect();
+    let z1_limbs: Vec<U32Target> = sig[0..SIG_LEN / 2]
+        .chunks(4)
+        .into_iter()
+        .map(|chunk| {
+            let zero = builder.zero();
+            let factor = builder.constant(F::from_canonical_u32(256));
+            U32Target(
+                chunk
+                    .iter()
+                    .fold(zero, |acc, c| builder.mul_add(acc, factor, *c)),
+            )
+        })
+        .rev()
+        .collect();
     let z1 = BigUintTarget { limbs: z1_limbs };
 
-    let z2_limbs: Vec<U32Target> = sig[SIG_LEN/2..SIG_LEN].chunks(4).into_iter().map(|chunk| {
-        let zero = builder.zero();
-        let factor = builder.constant(F::from_canonical_u32(256));
-        U32Target(chunk.iter().fold(zero, |acc, c| builder.mul_add(acc, factor, *c)))
-    }).rev().collect();
+    let z2_limbs: Vec<U32Target> = sig[SIG_LEN / 2..SIG_LEN]
+        .chunks(4)
+        .into_iter()
+        .map(|chunk| {
+            let zero = builder.zero();
+            let factor = builder.constant(F::from_canonical_u32(256));
+            U32Target(
+                chunk
+                    .iter()
+                    .fold(zero, |acc, c| builder.mul_add(acc, factor, *c)),
+            )
+        })
+        .rev()
+        .collect();
     let z2 = BigUintTarget { limbs: z2_limbs };
 
     builder.connect_biguint(&x0, &z2);
 
-    let pow_2_383 = builder.constant_biguint(&(BigUint::from(1u32)<<383u32));
-    let pow_2_381 = builder.constant_biguint(&(BigUint::from(1u32)<<381u32));
+    let pow_2_383 = builder.constant_biguint(&(BigUint::from(1u32) << 383u32));
+    let pow_2_381 = builder.constant_biguint(&(BigUint::from(1u32) << 381u32));
     let pow_2_381_or_zero = BigUintTarget {
-        limbs: (0..N).into_iter().map(|i| U32Target(builder.select(aflag, pow_2_381.limbs[i].0, zero.0))).collect(),
+        limbs: (0..N)
+            .into_iter()
+            .map(|i| U32Target(builder.select(aflag, pow_2_381.limbs[i].0, zero.0)))
+            .collect(),
     };
     let flags = builder.add_biguint(&pow_2_383, &pow_2_381_or_zero);
     let z1_reconstructed = builder.add_biguint(x1, &flags);
 
     builder.connect_biguint(&z1, &z1_reconstructed);
-
 }
 
 #[derive(Debug, Default)]
@@ -316,14 +412,42 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for G2A
     }
 
     fn dependencies(&self) -> Vec<plonky2::iop::target::Target> {
-        let a_targets = self.a.iter().flat_map(|f2| f2.iter().flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>()).collect::<Vec<Target>>()).collect::<Vec<Target>>();
-        let b_targets = self.b.iter().flat_map(|f2| f2.iter().flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>()).collect::<Vec<Target>>()).collect::<Vec<Target>>();
-        let dx_targets = self.dx.iter().flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>()).collect::<Vec<Target>>();
-        let dy_targets = self.dy.iter().flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>()).collect::<Vec<Target>>();
+        let a_targets = self
+            .a
+            .iter()
+            .flat_map(|f2| {
+                f2.iter()
+                    .flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>())
+                    .collect::<Vec<Target>>()
+            })
+            .collect::<Vec<Target>>();
+        let b_targets = self
+            .b
+            .iter()
+            .flat_map(|f2| {
+                f2.iter()
+                    .flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>())
+                    .collect::<Vec<Target>>()
+            })
+            .collect::<Vec<Target>>();
+        let dx_targets = self
+            .dx
+            .iter()
+            .flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>())
+            .collect::<Vec<Target>>();
+        let dy_targets = self
+            .dy
+            .iter()
+            .flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>())
+            .collect::<Vec<Target>>();
         [a_targets, b_targets, dx_targets, dy_targets].concat()
     }
 
-    fn run_once(&self, witness: &plonky2::iop::witness::PartitionWitness<F>, out_buffer: &mut plonky2::iop::generator::GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &plonky2::iop::witness::PartitionWitness<F>,
+        out_buffer: &mut plonky2::iop::generator::GeneratedValues<F>,
+    ) {
         let ax = Fp2([
             Fp::get_fp_from_biguint(witness.get_biguint_target(self.a[0][0].clone())),
             Fp::get_fp_from_biguint(witness.get_biguint_target(self.a[0][1].clone())),
@@ -355,7 +479,11 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for G2A
         out_buffer.set_biguint_target(&self.out[1][1], &outy.0[1].to_biguint());
     }
 
-    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>) -> plonky2::util::serialization::IoResult<()> {
+    fn serialize(
+        &self,
+        dst: &mut Vec<u8>,
+        _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>,
+    ) -> plonky2::util::serialization::IoResult<()> {
         self.a[0][0].serialize(dst)?;
         self.a[0][1].serialize(dst)?;
         self.a[1][0].serialize(dst)?;
@@ -374,9 +502,13 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for G2A
         self.out[1][1].serialize(dst)
     }
 
-    fn deserialize(src: &mut plonky2::util::serialization::Buffer, _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>) -> plonky2::util::serialization::IoResult<Self>
+    fn deserialize(
+        src: &mut plonky2::util::serialization::Buffer,
+        _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>,
+    ) -> plonky2::util::serialization::IoResult<Self>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         let ax_c0 = BigUintTarget::deserialize(src)?;
         let ax_c1 = BigUintTarget::deserialize(src)?;
         let ay_c0 = BigUintTarget::deserialize(src)?;
@@ -416,12 +548,28 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for G2D
     }
 
     fn dependencies(&self) -> Vec<plonky2::iop::target::Target> {
-        let a_targets = self.a.iter().flat_map(|f2| f2.iter().flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>()).collect::<Vec<Target>>()).collect::<Vec<Target>>();
-        let iso_3_a_targets = self.iso_3_a.iter().flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>()).collect::<Vec<Target>>();
+        let a_targets = self
+            .a
+            .iter()
+            .flat_map(|f2| {
+                f2.iter()
+                    .flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>())
+                    .collect::<Vec<Target>>()
+            })
+            .collect::<Vec<Target>>();
+        let iso_3_a_targets = self
+            .iso_3_a
+            .iter()
+            .flat_map(|f| f.limbs.iter().map(|l| l.0).collect::<Vec<Target>>())
+            .collect::<Vec<Target>>();
         [a_targets, iso_3_a_targets].concat()
     }
 
-    fn run_once(&self, witness: &plonky2::iop::witness::PartitionWitness<F>, out_buffer: &mut plonky2::iop::generator::GeneratedValues<F>) {
+    fn run_once(
+        &self,
+        witness: &plonky2::iop::witness::PartitionWitness<F>,
+        out_buffer: &mut plonky2::iop::generator::GeneratedValues<F>,
+    ) {
         let iso_3_a = Fp2([
             Fp::get_fp_from_biguint(witness.get_biguint_target(self.iso_3_a[0].clone())),
             Fp::get_fp_from_biguint(witness.get_biguint_target(self.iso_3_a[1].clone())),
@@ -446,7 +594,11 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for G2D
         out_buffer.set_biguint_target(&self.out[1][1], &outy.0[1].to_biguint());
     }
 
-    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>) -> plonky2::util::serialization::IoResult<()> {
+    fn serialize(
+        &self,
+        dst: &mut Vec<u8>,
+        _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>,
+    ) -> plonky2::util::serialization::IoResult<()> {
         self.a[0][0].serialize(dst)?;
         self.a[0][1].serialize(dst)?;
         self.a[1][0].serialize(dst)?;
@@ -459,9 +611,13 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for G2D
         self.out[1][1].serialize(dst)
     }
 
-    fn deserialize(src: &mut plonky2::util::serialization::Buffer, _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>) -> plonky2::util::serialization::IoResult<Self>
+    fn deserialize(
+        src: &mut plonky2::util::serialization::Buffer,
+        _common_data: &plonky2::plonk::circuit_data::CommonCircuitData<F, D>,
+    ) -> plonky2::util::serialization::IoResult<Self>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         let ax_c0 = BigUintTarget::deserialize(src)?;
         let ax_c1 = BigUintTarget::deserialize(src)?;
         let ay_c0 = BigUintTarget::deserialize(src)?;
@@ -485,16 +641,124 @@ mod tests {
     use std::str::FromStr;
 
     use num_bigint::{BigUint, ToBigUint};
-    use plonky2::{field::types::Field, iop::witness::{PartialWitness, WitnessWrite}, plonk::{circuit_builder::CircuitBuilder, circuit_data::CircuitConfig, config::{GenericConfig, PoseidonGoldilocksConfig}}};
+    use plonky2::{
+        field::types::Field,
+        iop::witness::{PartialWitness, WitnessWrite},
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            config::{GenericConfig, PoseidonGoldilocksConfig},
+        },
+    };
     use plonky2_crypto::biguint::{CircuitBuilderBiguint, WitnessBigUint};
 
-    use crate::{fp_plonky2::N, native::{Fp, Fp2}};
+    use crate::{
+        fp_plonky2::N,
+        native::{mul_fp2, Fp, Fp2},
+    };
 
-    use super::{g2_add, g2_add_unequal, g2_double, g2_scalar_mul, signature_point_check, SIG_LEN};
+    use super::{
+        g2_add, g2_add_unequal, g2_double, g2_scalar_mul, my_g2_add, signature_point_check, SIG_LEN,
+    };
 
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
+
+    #[test]
+    fn test_my_g2_add() {
+        // env_logger::init();
+        let ax = Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "337725438187709982817188701931175748950561864071211469604211805451542415352866003578718608366094520056481699232210"
+            ).unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "325784474482020989596135374893471919876505088991873421195308352667079503424389512976821068246925718319548045276021"
+            ).unwrap()),
+        ]);
+        let ay = Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "2965841325781469856973174148258785715970498867849450741444982165189412687797594966692602501064144340797710797471604"
+            ).unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "1396501224612541682947972324170488919567615665343008985787728980681572855276817422483173426760119128141672533354119"
+            ).unwrap()),
+        ]);
+        let bx = Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "3310291183651938419676930134503606039576251708119934019650494815974674760881379622302324811830103490883079904029190"
+            ).unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "845507222118475144290150023685070019360459684233155402409229752404383900284940551672371362493058110240418657298132"
+            ).unwrap()),
+        ]);
+        let by = Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "569469686320544423596306308487126199229297307366529623191489815159190893993668979352767262071942316086625514601662"
+            ).unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "2551756239942517806379811015764241238167383065214268002625836091916337464087928632477808357405422759164808763594986"
+            ).unwrap()),
+        ]);
+        let outx = Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "3768960129599410557225162537737286003238400530051754572454824471200864202913026112975152396185116175737023068710834"
+            ).unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "2843653242501816279232983717246998149289638605923450990196321568072224346134709601553669097144892265594669670100681"
+            ).unwrap()),
+        ]);
+        let outy = Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "2136473314670056131183153764113091685196675640973971063848296586048702180604877062503412214120535118046733529576506"
+            ).unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str(
+                "3717743359948639609414970569174500186381762539811697438986507840606082550875593852503699874848297189142874182531754"
+            ).unwrap()),
+        ]);
+
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+
+        let ax_c0 = builder.add_virtual_biguint_target(N);
+        let ax_c1 = builder.add_virtual_biguint_target(N);
+        let ay_c0 = builder.add_virtual_biguint_target(N);
+        let ay_c1 = builder.add_virtual_biguint_target(N);
+        let a = [[ax_c0, ax_c1], [ay_c0, ay_c1]];
+
+        let bx_c0 = builder.add_virtual_biguint_target(N);
+        let bx_c1 = builder.add_virtual_biguint_target(N);
+        let by_c0 = builder.add_virtual_biguint_target(N);
+        let by_c1 = builder.add_virtual_biguint_target(N);
+        let b = [[bx_c0, bx_c1], [by_c0, by_c1]];
+
+        let mut out = my_g2_add(&mut builder, &a, &b);
+
+        for _ in 0..50 {
+            out = my_g2_add(&mut builder, &a, &b)
+        }
+
+        let mut pw = PartialWitness::<F>::new();
+        pw.set_biguint_target(&a[0][0], &ax.0[0].to_biguint());
+        pw.set_biguint_target(&a[0][1], &ax.0[1].to_biguint());
+        pw.set_biguint_target(&a[1][0], &ay.0[0].to_biguint());
+        pw.set_biguint_target(&a[1][1], &ay.0[1].to_biguint());
+
+        pw.set_biguint_target(&b[0][0], &bx.0[0].to_biguint());
+        pw.set_biguint_target(&b[0][1], &bx.0[1].to_biguint());
+        pw.set_biguint_target(&b[1][0], &by.0[0].to_biguint());
+        pw.set_biguint_target(&b[1][1], &by.0[1].to_biguint());
+
+        pw.set_biguint_target(&out[0][0], &outx.0[0].to_biguint());
+        pw.set_biguint_target(&out[0][1], &outx.0[1].to_biguint());
+        pw.set_biguint_target(&out[1][0], &outy.0[0].to_biguint());
+        pw.set_biguint_target(&out[1][1], &outy.0[1].to_biguint());
+
+        builder.print_gate_counts(0);
+        let data = builder.build::<C>();
+        let proof = data.prove(pw).unwrap();
+        data.verify(proof).unwrap();
+    }
 
     #[test]
     fn test_g2_add_unequal() {
@@ -563,7 +827,10 @@ mod tests {
         let by_c1 = builder.add_virtual_biguint_target(N);
         let b = [[bx_c0, bx_c1], [by_c0, by_c1]];
 
-        let out = g2_add_unequal(&mut builder, &a, &b);
+        let mut out = g2_add_unequal(&mut builder, &a, &b);
+        for _ in 0..50 {
+            out = g2_add_unequal(&mut builder, &a, &b);
+        }
 
         let mut pw = PartialWitness::<F>::new();
         pw.set_biguint_target(&a[0][0], &ax.0[0].to_biguint());
@@ -739,6 +1006,9 @@ mod tests {
         let fals = builder._false();
 
         let out = g2_add(&mut builder, &a, fals, &b, fals, &iso_3_a, &iso_3_b);
+        for _ in 0..50 {
+            g2_add(&mut builder, &a, fals, &b, fals, &iso_3_a, &iso_3_b);
+        }
 
         let mut pw = PartialWitness::<F>::new();
         pw.set_biguint_target(&a[0][0], &ax.0[0].to_biguint());
@@ -760,6 +1030,7 @@ mod tests {
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
         data.verify(proof).unwrap();
+        assert!(false);
     }
 
     #[test]
@@ -851,14 +1122,11 @@ mod tests {
             ).unwrap()),
         ]);
         let sig = vec![
-            139, 126,  67,  23, 196, 226,  59, 211, 144, 232, 136, 101,
-            183,  50, 126, 215, 210, 110,  97, 248, 215, 138, 135,  11,
-            184, 144,   5, 162, 250, 243, 244,  51, 140,  27, 110,   7,
-            158,  63,  35, 135,  61,  90, 233,   5, 135,  72, 183, 229,
-             13, 218, 102,  33,  65,  70,  85,  67, 129, 210, 109,  61,
-             39, 103, 248,   6, 238, 111, 155, 116, 213,  81, 130, 121,
-             92, 156,  15, 149,  69,  65,  43,  98, 117, 125, 244,  59,
-            143,  22,  72,  75,  38,  67, 175, 183, 249,   6,  57,  86
+            139, 126, 67, 23, 196, 226, 59, 211, 144, 232, 136, 101, 183, 50, 126, 215, 210, 110,
+            97, 248, 215, 138, 135, 11, 184, 144, 5, 162, 250, 243, 244, 51, 140, 27, 110, 7, 158,
+            63, 35, 135, 61, 90, 233, 5, 135, 72, 183, 229, 13, 218, 102, 33, 65, 70, 85, 67, 129,
+            210, 109, 61, 39, 103, 248, 6, 238, 111, 155, 116, 213, 81, 130, 121, 92, 156, 15, 149,
+            69, 65, 43, 98, 117, 125, 244, 59, 143, 22, 72, 75, 38, 67, 175, 183, 249, 6, 57, 86,
         ];
         let sig_f: Vec<F> = sig.iter().map(|i| F::from_canonical_u8(*i)).collect();
 
@@ -891,5 +1159,4 @@ mod tests {
         let proof = data.prove(pw).unwrap();
         data.verify(proof).unwrap();
     }
-
 }
