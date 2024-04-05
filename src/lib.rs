@@ -17,5 +17,5 @@ pub mod hash_to_curve;
 pub mod hash_to_field;
 pub mod miller_loop;
 pub mod native;
-pub mod signature_verification;
 pub mod utils;
+pub mod verify_proofs;

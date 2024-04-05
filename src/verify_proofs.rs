@@ -253,130 +253,6 @@ pub fn verify_proofs(
     }
 }
 
-pub fn verify_all_proofs(
-    builder: &mut CircuitBuilder<F, D>,
-    first_ml_proof: ProofTuple<F, C, D>,
-    second_ml_proof: ProofTuple<F, C, D>,
-    g1_generator: &PointG1Target,
-    signature: &PointG2Target,
-    public_key: &PointG1Target,
-    hm_g2: &PointG2Target,
-) {
-    let first_ml_pub_inputs = first_ml_proof.0.public_inputs;
-    let second_ml_pub_inputs = second_ml_proof.0.public_inputs;
-
-    // FIRST MILLER LOOP
-    let g1_x_input = builder.constant_biguint(&BigUint::new(
-        first_ml_pub_inputs[0..12]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g1_y_input = builder.constant_biguint(&BigUint::new(
-        first_ml_pub_inputs[12..24]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-
-    let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
-        first_ml_pub_inputs[24..36]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
-        first_ml_pub_inputs[36..48]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
-        first_ml_pub_inputs[48..60]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
-        first_ml_pub_inputs[60..72]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-
-    builder.connect_biguint(&g1_generator[0], &g1_x_input);
-    builder.connect_biguint(&g1_generator[1], &g1_y_input);
-
-    builder.connect_biguint(&signature[0][0], &g2_x_input_c0);
-    builder.connect_biguint(&signature[0][1], &g2_x_input_c1);
-    builder.connect_biguint(&signature[1][0], &g2_y_input_c0);
-    builder.connect_biguint(&signature[1][1], &g2_y_input_c1);
-
-    let first_ml_r = fp12_as_fp_limbs(first_ml_pub_inputs, 72);
-    let (_, proof_final_exp, _) =
-        final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(first_ml_r)));
-    let first_fin_exp_pub_inputs = proof_final_exp.public_inputs;
-    let first_fin_exp_pub_inputs = fp12_as_biguint_target(builder, first_fin_exp_pub_inputs, 0);
-
-    // SECOND MILLER LOOP
-    let g1_x_input = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[0..12]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g1_y_input = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[12..24]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-
-    let g2_x_input_c0 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[24..36]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_x_input_c1 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[36..48]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_y_input_c0 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[48..60]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-    let g2_y_input_c1 = builder.constant_biguint(&BigUint::new(
-        second_ml_pub_inputs[60..72]
-            .iter()
-            .map(|x| x.0 as u32)
-            .collect(),
-    ));
-
-    builder.connect_biguint(&public_key[0], &g1_x_input);
-    builder.connect_biguint(&public_key[1], &g1_y_input);
-
-    builder.connect_biguint(&hm_g2[0][0], &g2_x_input_c0);
-    builder.connect_biguint(&hm_g2[0][1], &g2_x_input_c1);
-    builder.connect_biguint(&hm_g2[1][0], &g2_y_input_c0);
-    builder.connect_biguint(&hm_g2[1][1], &g2_y_input_c1);
-
-    let second_ml_r = fp12_as_fp_limbs(second_ml_pub_inputs.clone(), 96);
-
-    let (_, proof_final_exp, _) =
-        final_exponentiate_main::<F, C, D>(Fp12(vec_limbs_to_fixed_array::<Fp, 12>(second_ml_r)));
-    let second_fin_exp_pub_inputs = proof_final_exp.public_inputs;
-    let second_fin_exp_pub_inputs = fp12_as_biguint_target(builder, second_fin_exp_pub_inputs, 0);
-
-    for i in 0..12 {
-        builder.connect_biguint(&first_fin_exp_pub_inputs[i], &second_fin_exp_pub_inputs[i]);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{str::FromStr, time::Instant};
@@ -396,7 +272,7 @@ mod tests {
         g2_plonky2::PointG2Target,
         miller_loop::MillerLoopStark,
         native::{Fp, Fp2},
-        signature_verification::{calc_ell_coeffs_and_generate_g2_point, verify_all_proofs},
+        verify_proofs::calc_ell_coeffs_and_generate_g2_point,
     };
 
     const D: usize = 2;
@@ -405,8 +281,9 @@ mod tests {
     type _MlStark = MillerLoopStark<F, D>;
 
     use super::{verify_miller_loop, verify_proofs};
+
     #[test]
-    fn test_fml_ell_coeffs() {
+    fn test_verify_proofs() {
         let circuit_config =
             plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();
         let mut builder =
@@ -489,144 +366,5 @@ mod tests {
         let data = builder.build::<C>();
         let _proof = data.prove(pw);
         println!("time: {:?}", now.elapsed());
-    }
-
-    #[test]
-    fn test_verify_miller_loop() {
-        let circuit_config =
-            plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();
-        let mut builder =
-            plonky2::plonk::circuit_builder::CircuitBuilder::<F, D>::new(circuit_config);
-
-        let rng = &mut ark_std::rand::thread_rng();
-
-        let g1 = G1Affine::generator();
-        let sk: Fr = Fr::rand(rng);
-        let pk = Into::<G1Affine>::into(g1 * sk);
-        let message = G2Affine::rand(rng);
-        let signature = Into::<G2Affine>::into(message * sk);
-
-        // FIRST MILLER LOOP
-        let first_ml_proof = verify_miller_loop(
-            Fp::get_fp_from_biguint(g1.x.to_string().parse::<BigUint>().unwrap()),
-            Fp::get_fp_from_biguint(g1.y.to_string().parse::<BigUint>().unwrap()),
-            Fp2([
-                Fp::get_fp_from_biguint(signature.x.c0.to_string().parse::<BigUint>().unwrap()),
-                Fp::get_fp_from_biguint(signature.x.c1.to_string().parse::<BigUint>().unwrap()),
-            ]),
-            Fp2([
-                Fp::get_fp_from_biguint(signature.y.c0.to_string().parse::<BigUint>().unwrap()),
-                Fp::get_fp_from_biguint(signature.y.c1.to_string().parse::<BigUint>().unwrap()),
-            ]),
-            Fp2([
-                Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()), //change to zero
-                Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
-            ]),
-        );
-
-        // SECOND MILLER LOOP
-        let second_ml_proof = verify_miller_loop(
-            Fp::get_fp_from_biguint(pk.x.to_string().parse::<BigUint>().unwrap()),
-            Fp::get_fp_from_biguint(pk.y.to_string().parse::<BigUint>().unwrap()),
-            Fp2([
-                Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap()),
-                Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap()),
-            ]),
-            Fp2([
-                Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap()),
-                Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap()),
-            ]),
-            Fp2([
-                Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()), //change to zero
-                Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
-            ]),
-        );
-
-        // G1 GENERATOR POINT
-        let g1_generator: PointG1Target = [
-            builder.constant_biguint(&g1.x.to_string().parse::<BigUint>().unwrap()),
-            builder.constant_biguint(&g1.y.to_string().parse::<BigUint>().unwrap()),
-        ];
-
-        // SIGNATURE
-        let signature: PointG2Target = [
-            [
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(
-                        signature.x.c0.to_string().parse::<BigUint>().unwrap(),
-                    )
-                    .to_biguint(),
-                ),
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(
-                        signature.x.c1.to_string().parse::<BigUint>().unwrap(),
-                    )
-                    .to_biguint(),
-                ),
-            ],
-            [
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(
-                        signature.y.c0.to_string().parse::<BigUint>().unwrap(),
-                    )
-                    .to_biguint(),
-                ),
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(
-                        signature.y.c1.to_string().parse::<BigUint>().unwrap(),
-                    )
-                    .to_biguint(),
-                ),
-            ],
-        ];
-
-        // PUBLIC KEY
-        let public_key: PointG1Target = [
-            builder.constant_biguint(&pk.x.to_string().parse::<BigUint>().unwrap()),
-            builder.constant_biguint(&pk.y.to_string().parse::<BigUint>().unwrap()),
-        ];
-
-        // MESSAGE AS G2 POINT
-        let message: PointG2Target = [
-            [
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(message.x.c0.to_string().parse::<BigUint>().unwrap())
-                        .to_biguint(),
-                ),
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(message.x.c1.to_string().parse::<BigUint>().unwrap())
-                        .to_biguint(),
-                ),
-            ],
-            [
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(message.y.c0.to_string().parse::<BigUint>().unwrap())
-                        .to_biguint(),
-                ),
-                builder.constant_biguint(
-                    &Fp::get_fp_from_biguint(message.y.c1.to_string().parse::<BigUint>().unwrap())
-                        .to_biguint(),
-                ),
-            ],
-        ];
-
-        println!("----------------------------------------------------------------");
-
-        verify_all_proofs(
-            &mut builder,
-            first_ml_proof,
-            second_ml_proof,
-            &g1_generator,
-            &signature,
-            &public_key,
-            &message,
-        );
-
-        let now = Instant::now();
-        let pw = PartialWitness::new();
-        let data = builder.build::<C>();
-        let _proof = data.prove(pw);
-        println!("time: {:?}", now.elapsed());
-        // assert!(false)
     }
 }
