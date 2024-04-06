@@ -269,7 +269,7 @@ mod tests {
 
     use crate::{
         g1_plonky2::PointG1Target,
-        g2_plonky2::PointG2Target,
+        g2_plonky2::{g2_add_unequal, PointG2Target},
         miller_loop::MillerLoopStark,
         native::{Fp, Fp2},
         verify_proofs::calc_ell_coeffs_and_generate_g2_point,
@@ -283,15 +283,59 @@ mod tests {
     use super::{verify_miller_loop, verify_proofs};
 
     #[test]
-    fn test_point_addition() {
+    fn test_point_addition_add_unequal() {
         let circuit_config =
             plonky2::plonk::circuit_data::CircuitConfig::standard_recursion_config();
         let mut builder =
             plonky2::plonk::circuit_builder::CircuitBuilder::<F, D>::new(circuit_config);
 
         let rng = &mut ark_std::rand::thread_rng();
-        let g1 = G1Affine::rand(rng);
-        let g2 = G2Affine::rand(rng);
+        let g2_rand_a = G2Affine::rand(rng);
+        let g2_rand_b = G2Affine::rand(rng);
+
+        // G2 coordinates in BigUint
+        let g2_x_c0: BigUint = g2_rand_a.x().unwrap().c0.into();
+        let g2_x_c1: BigUint = g2_rand_a.x().unwrap().c1.into();
+        let g2_y_c0: BigUint = g2_rand_a.y().unwrap().c0.into();
+        let g2_y_c1: BigUint = g2_rand_a.y().unwrap().c1.into();
+
+        // G2 rand a
+        let g2_rand_a = [
+            [
+                builder.constant_biguint(&g2_x_c0),
+                builder.constant_biguint(&g2_x_c1),
+            ],
+            [
+                builder.constant_biguint(&g2_y_c0),
+                builder.constant_biguint(&g2_y_c1),
+            ],
+        ];
+
+        let g2_x_c0: BigUint = g2_rand_b.x().unwrap().c0.into();
+        let g2_x_c1: BigUint = g2_rand_b.x().unwrap().c1.into();
+        let g2_y_c0: BigUint = g2_rand_b.y().unwrap().c0.into();
+        let g2_y_c1: BigUint = g2_rand_b.y().unwrap().c1.into();
+
+        // G2 rand b
+        let g2_rand_b = [
+            [
+                builder.constant_biguint(&g2_x_c0),
+                builder.constant_biguint(&g2_x_c1),
+            ],
+            [
+                builder.constant_biguint(&g2_y_c0),
+                builder.constant_biguint(&g2_y_c1),
+            ],
+        ];
+
+        for _ in 0..10 {
+            g2_add_unequal(&mut builder, &g2_rand_a, &g2_rand_b);
+        }
+
+        let pw = PartialWitness::<F>::new();
+        let data = builder.build::<C>();
+        let proof = data.prove(pw).unwrap();
+        data.verify(proof).unwrap();
     }
 
     #[test]
