@@ -154,11 +154,10 @@ pub fn g2_add<F: RichField + Extendable<D>, const D: usize>(
     iso_3_a: &Fp2Target,
     iso_3_b: &Fp2Target,
 ) -> PointG2Target {
-    let x_equal = crate::fp2_plonky2::is_equal(builder, &a[0], &b[0]); // compares x of a & b -> true/false
-    let y_equal = crate::fp2_plonky2::is_equal(builder, &a[1], &b[1]); // compares y of a & b -> true/false
-    let do_double = builder.and(x_equal, y_equal); // x && y are equal
+    let x_equal = crate::fp2_plonky2::is_equal(builder, &a[0], &b[0]);
+    let y_equal = crate::fp2_plonky2::is_equal(builder, &a[1], &b[1]);
+    let do_double = builder.and(x_equal, y_equal);
 
-    // empty target point b
     let add_input_b = [
         [
             builder.add_virtual_biguint_target(N),
@@ -827,10 +826,7 @@ mod tests {
         let by_c1 = builder.add_virtual_biguint_target(N);
         let b = [[bx_c0, bx_c1], [by_c0, by_c1]];
 
-        let mut out = g2_add_unequal(&mut builder, &a, &b);
-        for _ in 0..50 {
-            out = g2_add_unequal(&mut builder, &a, &b);
-        }
+        let out = g2_add_unequal(&mut builder, &a, &b);
 
         let mut pw = PartialWitness::<F>::new();
         pw.set_biguint_target(&a[0][0], &ax.0[0].to_biguint());
@@ -1006,9 +1002,6 @@ mod tests {
         let fals = builder._false();
 
         let out = g2_add(&mut builder, &a, fals, &b, fals, &iso_3_a, &iso_3_b);
-        for _ in 0..50 {
-            g2_add(&mut builder, &a, fals, &b, fals, &iso_3_a, &iso_3_b);
-        }
 
         let mut pw = PartialWitness::<F>::new();
         pw.set_biguint_target(&a[0][0], &ax.0[0].to_biguint());
@@ -1030,7 +1023,6 @@ mod tests {
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
         data.verify(proof).unwrap();
-        assert!(false);
     }
 
     #[test]
