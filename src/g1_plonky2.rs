@@ -9,6 +9,7 @@ use plonky2_crypto::{
     biguint::{BigUintTarget, CircuitBuilderBiguint},
     u32::arithmetic_u32::{CircuitBuilderU32, U32Target},
 };
+use snowbridge_milagro_bls::{PublicKey, SecretKey};
 
 use crate::{
     fp_plonky2::{FpTarget, N},
@@ -93,6 +94,26 @@ pub fn compress_g1<F: RichField + Extendable<D>, const D: usize>(
     [g1_x, g1_y]
 }
 
+pub fn safe_pub_key_to_g1(public_key: &str, sk: SecretKey) {
+    let test = hex::decode(public_key.to_string()).unwrap();
+    println!("test bytes_be: {:?}", test);
+    let public_key = PublicKey::from_bytes(&hex::decode(public_key.to_string()).unwrap()).unwrap();
+    let milagro_public_key = PublicKey::from_secret_key(&sk);
+
+    let g1_x = BigUint::from_bytes_be(&hex::decode(public_key.point.getx().to_string()).unwrap());
+    println!("g1_x bytes_be: {:?}", g1_x);
+    let g1_x = BigUint::from_bytes_le(&hex::decode(public_key.point.getx().to_string()).unwrap());
+    println!("g1_x bytes_be: {:?}", g1_x);
+
+    println!("============");
+    let g1_x =
+        BigUint::from_bytes_be(&hex::decode(milagro_public_key.point.getx().to_string()).unwrap());
+    println!("g1_x bytes_be: {:?}", g1_x);
+    let g1_x =
+        BigUint::from_bytes_le(&hex::decode(milagro_public_key.point.getx().to_string()).unwrap());
+    println!("g1_x bytes_be: {:?}", g1_x);
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -114,8 +135,9 @@ mod tests {
         },
     };
     use plonky2_crypto::biguint::{CircuitBuilderBiguint, WitnessBigUint};
+    use snowbridge_milagro_bls::SecretKey;
 
-    use crate::{fp_plonky2::N, native::Fp};
+    use crate::{fp_plonky2::N, g1_plonky2::safe_pub_key_to_g1, native::Fp};
 
     use super::{compress_g1, pk_point_check, PUB_KEY_LEN};
 
@@ -172,28 +194,97 @@ mod tests {
             builder.constant_biguint(&BigUint::try_from(*g1_rand.y().unwrap()).unwrap()),
         ];
 
-        let l = builder.constant_biguint(&BigUint::try_from(*g1_rand.x().unwrap()).unwrap());
-        println!("asda {:?}", builder.split_biguint_to_bits(&l).len());
-
-        let g1_x: Vec<BoolTarget> = BigUint::try_from(*g1_rand.x().unwrap())
+        let g1_rand_x_bits = BigUint::try_from(*g1_rand.x().unwrap())
             .unwrap()
             .to_bytes_le()
+            .into_iter()
+            .flat_map(|val| {
+                [
+                    (val >> 7) & 1,
+                    (val >> 6) & 1,
+                    (val >> 5) & 1,
+                    (val >> 4) & 1,
+                    (val >> 3) & 1,
+                    (val >> 2) & 1,
+                    (val >> 1) & 1,
+                    (val >> 0) & 1,
+                ]
+                .into_iter()
+            })
+            .collect::<Vec<_>>();
+
+        let g1_rand_y_bits = BigUint::try_from(*g1_rand.y().unwrap())
+            .unwrap()
+            .to_bytes_le()
+            .into_iter()
+            .flat_map(|val| {
+                [
+                    (val >> 7) & 1,
+                    (val >> 6) & 1,
+                    (val >> 5) & 1,
+                    (val >> 4) & 1,
+                    (val >> 3) & 1,
+                    (val >> 2) & 1,
+                    (val >> 1) & 1,
+                    (val >> 0) & 1,
+                ]
+                .into_iter()
+            })
+            .collect::<Vec<_>>();
+
+        let g1_rand_x_bits: Vec<BoolTarget> = g1_rand_x_bits
             .into_iter()
             .map(|f| BoolTarget::new_unsafe(builder.constant(F::from_canonical_u8(f))))
             .collect();
 
-        let g1_y: Vec<BoolTarget> = BigUint::try_from(*g1_rand.y().unwrap())
-            .unwrap()
-            .to_bytes_le()
+        let g1_rand_y_bits: Vec<BoolTarget> = g1_rand_y_bits
             .into_iter()
             .map(|f| BoolTarget::new_unsafe(builder.constant(F::from_canonical_u8(f))))
             .collect();
-        let result_g1_point = compress_g1(&mut builder, g1_x, g1_y);
 
-        builder.connect_biguint(&result_g1_point[0], &expected_g1_point[0]);
-        builder.connect_biguint(&result_g1_point[1], &expected_g1_point[1]);
+        let g1_x_virtual = builder.add_virtual_biguint_target(12);
+        let g1_y_virtual = builder.add_virtual_biguint_target(12);
+        let g1_virtual = [g1_x_virtual, g1_y_virtual];
 
-        let pw = PartialWitness::<F>::new();
+        let pk = "8d9d1f916ffe42ec0810cd56f702d2b75b10a7f77d78646a7210cf1ee5875ba702c99a9f4e2484da9b0b31192a3bdcc8";
+        let pubk = vec![
+            78, 252, 122, 126, 32, 0, 75, 89, 252, 31, 42, 130, 254, 88, 6, 90, 138, 202, 135, 194,
+            233, 117, 181, 75, 96, 238, 79, 100, 237, 59, 140, 111,
+        ];
+        let sk = SecretKey::from_bytes(&pk.to_string().as_bytes()).unwrap();
+        safe_pub_key_to_g1(pk, sk);
+        assert!(false);
+        // let g1_x: Vec<BoolTarget> = BigUint::try_from(*g1_rand.x().unwrap())
+        //     .unwrap()
+        //     .to_bytes_le()
+        //     .into_iter()
+        //     .map(|f| BoolTarget::new_unsafe(builder.constant(F::from_canonical_u8(f))))
+        //     .collect();
+
+        // let g1_y: Vec<BoolTarget> = BigUint::try_from(*g1_rand.y().unwrap())
+        //     .unwrap()
+        //     .to_bytes_le()
+        //     .into_iter()
+        //     .map(|f| BoolTarget::new_unsafe(builder.constant(F::from_canonical_u8(f))))
+        //     .collect();
+        let result_g1_point = compress_g1(&mut builder, g1_rand_x_bits, g1_rand_y_bits);
+        println!("expected_g1_points x is: {:?}", expected_g1_point[0]);
+        println!("expected_g1_points y is: {:?}", expected_g1_point[1]);
+        println!("result_g1_point x is: {:?}", result_g1_point[0]);
+        println!("result_g1_point y is: {:?}", result_g1_point[1]);
+
+        //builder.connect_biguint(&result_g1_point[0], &expected_g1_point[0]);
+        //builder.connect_biguint(&result_g1_point[1], &expected_g1_point[1]);
+
+        let mut pw = PartialWitness::<F>::new();
+        pw.set_biguint_target(
+            &g1_virtual[0],
+            &BigUint::try_from(*g1_rand.x().unwrap()).unwrap(),
+        );
+        pw.set_biguint_target(
+            &g1_virtual[1],
+            &BigUint::try_from(*g1_rand.y().unwrap()).unwrap(),
+        );
         builder.print_gate_counts(0);
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();

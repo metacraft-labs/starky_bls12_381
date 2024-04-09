@@ -182,7 +182,7 @@ pub fn g2_add<F: RichField + Extendable<D>, const D: usize>(
     builder.connect_biguint(&add_input_b[0][1], &b[0][1]);
     builder.connect_biguint(&add_input_b[1][0], &b[1][0]);
     builder.connect_biguint(&add_input_b[1][1], &b[1][1]);
-    let addition = g2_add_unequal(builder, a, &add_input_b);
+    let addition = my_g2_add(builder, a, &add_input_b);
     let doubling = g2_double(builder, a, iso_3_a, iso_3_b);
     let both_inf = builder.and(is_infinity_a, is_infinity_b);
     let a_not_inf = builder.not(is_infinity_a);
@@ -398,11 +398,11 @@ pub fn signature_point_check<F: RichField + Extendable<D>, const D: usize>(
 
 #[derive(Debug, Default)]
 pub struct G2AdditionGenerator {
-    a: PointG2Target,
-    b: PointG2Target,
-    dx: Fp2Target,
-    dy: Fp2Target,
-    out: PointG2Target,
+    pub a: PointG2Target,
+    pub b: PointG2Target,
+    pub dx: Fp2Target,
+    pub dy: Fp2Target,
+    pub out: PointG2Target,
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for G2AdditionGenerator {
@@ -731,11 +731,7 @@ mod tests {
         let by_c1 = builder.add_virtual_biguint_target(N);
         let b = [[bx_c0, bx_c1], [by_c0, by_c1]];
 
-        let mut out = my_g2_add(&mut builder, &a, &b);
-
-        for _ in 0..50 {
-            out = my_g2_add(&mut builder, &a, &b)
-        }
+        let out = my_g2_add(&mut builder, &a, &b);
 
         let mut pw = PartialWitness::<F>::new();
         pw.set_biguint_target(&a[0][0], &ax.0[0].to_biguint());

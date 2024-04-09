@@ -21,8 +21,6 @@ fn aggregate_g2_points_benchmark(c: &mut Criterion) {
     let g2_rand_a = black_box(G2Affine::rand(rng));
     let g2_rand_b = black_box(G2Affine::rand(rng));
 
-    let k = (g2_rand_a.x().unwrap().c0);
-
     let g2_rand_a = black_box([
         [
             builder.constant_biguint(&BigUint::try_from(g2_rand_a.x().unwrap().c0).unwrap()),

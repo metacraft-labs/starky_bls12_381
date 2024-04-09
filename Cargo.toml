@@ -37,5 +37,13 @@ opt-level = 3
 parity-secp256k1 = { git = "https://github.com/paritytech/rust-secp256k1.git" }
 
 [[bench]]
+name = "g2_add_isolation_benchmark"
+harness = false
+
+[[bench]]
 name = "g2_aggregation_benchmark"
+harness = false
+
+[[bench]]
+name = "g2_add_without_generator_benchmark"
 harness = false
