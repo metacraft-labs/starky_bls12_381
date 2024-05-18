@@ -40,7 +40,7 @@ use snowbridge_milagro_bls::{
     AggregatePublicKey, BLSCurve::bls381::utils::hash_to_curve_g2, PublicKey, Signature,
 };
 
-fn calc_pairing_precomp<
+pub fn calc_pairing_precomp<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
