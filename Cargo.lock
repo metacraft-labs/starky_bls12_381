@@ -499,31 +499,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "curve25519-dalek"
-version = "4.0.0"
-source = "git+https://github.com/Electron-Labs/curve25519-dalek#fd71e1a4f0f36a7e3590177e999ca72b9c41ba42"
-dependencies = [
- "cfg-if 1.0.0",
- "cpufeatures",
- "curve25519-dalek-derive",
- "fiat-crypto",
- "platforms",
- "rustc_version",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "curve25519-dalek-derive"
-version = "0.1.0"
-source = "git+https://github.com/Electron-Labs/curve25519-dalek#fd71e1a4f0f36a7e3590177e999ca72b9c41ba42"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.64",
-]
-
-[[package]]
 name = "darling"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -673,7 +648,7 @@ version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c762bae6dcaf24c4c84667b8579785430908723d5c889f469d76a41d59cc7a9d"
 dependencies = [
- "curve25519-dalek 3.2.1",
+ "curve25519-dalek",
  "ed25519",
  "rand 0.7.3",
  "serde",
@@ -798,12 +773,6 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
-
-[[package]]
-name = "fiat-crypto"
-version = "0.1.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e825f6987101665dea6ec934c09ec6d721de7bc1bf92248e1d5810c8cd636b77"
 
 [[package]]
 name = "fixed-hash"
@@ -1111,15 +1080,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
 
 [[package]]
-name = "multithreaded-fs"
-version = "0.1.0"
-source = "git+https://github.com/Electron-Labs/multithreaded-fs.git#050e38bfd74e4b26d27ee4214dc7576b573fd60f"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "near-abi"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1152,7 +1112,7 @@ dependencies = [
  "borsh",
  "bs58",
  "c2-chacha",
- "curve25519-dalek 3.2.1",
+ "curve25519-dalek",
  "derive_more",
  "ed25519-dalek",
  "near-account-id",
@@ -1497,12 +1457,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
-name = "platforms"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db23d408679286588f4d4644f965003d056e3dd5abcaaa938116871d7ce2fee7"
-
-[[package]]
 name = "plonky2"
 version = "0.2.0"
 source = "git+https://github.com/metacraft-labs/plonky2#3ae50655f371184023815f50a42555c1cd9d7023"
@@ -1527,20 +1481,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "plonky2-circuit-serializer"
-version = "0.1.0"
-source = "git+https://github.com/metacraft-labs/plonky2-circuit-serializer#c6986b7d963ebbb09a207905901d5f4b3d9cbf52"
-dependencies = [
- "log",
- "multithreaded-fs",
- "plonky2",
- "plonky2_crypto",
- "plonky2_ed25519",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "plonky2_crypto"
 version = "0.1.0"
 source = "git+https://github.com/metacraft-labs/plonky2-crypto#b069bb3f0ea133e6348df0a8644660ca65f18403"
@@ -1555,26 +1495,6 @@ dependencies = [
  "rayon",
  "serde",
  "serde_with",
-]
-
-[[package]]
-name = "plonky2_ed25519"
-version = "0.1.0"
-source = "git+https://github.com/metacraft-labs/plonky2_ed25519#895bbf54e626be0b2d9e7bebc5ff4948d1f40298"
-dependencies = [
- "anyhow",
- "curve25519-dalek 4.0.0",
- "env_logger",
- "itertools 0.11.0",
- "log",
- "num",
- "plonky2",
- "plonky2_crypto",
- "plonky2_sha512",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "sha2 0.10.8",
 ]
 
 [[package]]
@@ -1604,18 +1524,6 @@ version = "0.2.0"
 source = "git+https://github.com/metacraft-labs/plonky2#3ae50655f371184023815f50a42555c1cd9d7023"
 dependencies = [
  "rayon",
-]
-
-[[package]]
-name = "plonky2_sha512"
-version = "0.1.0"
-source = "git+https://github.com/metacraft-labs/plonky2_sha512#82360002bcf81323edf1e4d58ff1902f9435fcb1"
-dependencies = [
- "anyhow",
- "plonky2",
- "plonky2_crypto",
- "rand 0.8.5",
- "sha2 0.10.8",
 ]
 
 [[package]]
@@ -2142,7 +2050,6 @@ dependencies = [
  "log",
  "num-bigint 0.4.5",
  "plonky2",
- "plonky2-circuit-serializer",
  "plonky2_crypto",
  "serde_json",
  "snowbridge-milagro-bls",
