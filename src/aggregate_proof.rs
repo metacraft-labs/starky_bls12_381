@@ -114,7 +114,7 @@ pub fn miller_loop_main<
     (stark, proof, config)
 }
 
-fn fp12_mul_main<
+pub fn fp12_mul_main<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F=F>,
     const D: usize
