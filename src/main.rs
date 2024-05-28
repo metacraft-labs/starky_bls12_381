@@ -1,56 +1,137 @@
-use eth_types::{eth2::{BeaconBlockHeader, SigningData, SyncAggregate, SyncCommittee, SyncCommitteeUpdate}, H256};
-use starky_bls12_381::aggregate_proof::aggregate_proof;
-use tree_hash::TreeHash;
-use std::fs::File;
-use std::io::BufReader;
+use ark_bls12_381::{
+    g1::{G1_GENERATOR_X, G1_GENERATOR_Y},
+    Fq, Fq2, Fr, G1Affine, G1Projective, G2Affine, G2Projective,
+};
+use ark_ec::{pairing::Pairing, short_weierstrass::Affine, Group};
+use ark_ff::PrimeField;
+use ark_serialize::CanonicalDeserialize;
+use ark_std::UniformRand;
+use eth_types::{
+    eth2::{BeaconBlockHeader, SigningData, SyncAggregate, SyncCommittee, SyncCommitteeUpdate},
+    H256,
+};
+use num_bigint::BigUint;
+use plonky2::plonk::{
+    circuit_data::CircuitConfig,
+    config::{GenericConfig, PoseidonGoldilocksConfig},
+};
 use serde_json::{self, Value};
+use snowbridge_milagro_bls::BLSCurve::{big::Big, bls381::utils::hash_to_curve_g2, ecp2::ECP2};
+use starky_bls12_381::{
+    aggregate_proof::{
+        aggregate_proof, final_exponentiate_main, miller_loop_main, recursive_proof,
+    },
+    calc_pairing_precomp::PairingPrecompStark,
+    ecc_aggregate::ECCAggStark,
+    final_exponentiate::FinalExponentiateStark,
+    fp12_mul::FP12MulStark,
+    miller_loop::MillerLoopStark,
+    native::{calc_pairing_precomp, miller_loop, Fp, Fp12, Fp2},
+};
+use std::io::BufReader;
+use std::{fs::File, ops::Neg, str::FromStr};
+use tree_hash::TreeHash;
 
-fn main() {
-   env_logger::init();
-   let file = File::open("src/light_client_update_period_1053.json").unwrap();
-   let reader = BufReader::new(file);
-   let light_client_update_json:Value = serde_json::from_reader(reader).expect("unable to read the file");
+fn main_thread() {
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
 
-   let prev_file = File::open("src/light_client_update_period_1052.json").unwrap();
-   let reader = BufReader::new(prev_file);
-   let prev_light_client_update_json:Value = serde_json::from_reader(reader).expect("unable to read the file");
+    type PpStark = PairingPrecompStark<F, D>;
+    type MlStark = MillerLoopStark<F, D>;
+    type Fp12MulStark = FP12MulStark<F, D>;
+    type FeStark = FinalExponentiateStark<F, D>;
+    type ECAggStark = ECCAggStark<F, D>;
 
+    let config = CircuitConfig::standard_recursion_config();
+    let rng = &mut ark_std::rand::thread_rng();
+    let pubkey = "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb";
+    let signature = "a42ae16f1c2a5fa69c04cb5998d2add790764ce8dd45bf25b29b4700829232052b52352dcff1cf255b3a7810ad7269601810f03b2bc8b68cf289cf295b206770605a190b6842583e47c3d1c0f73c54907bfb2a602157d46a4353a20283018763";
+    let msg = "1212121212121212121212121212121212121212121212121212121212121212";
 
-   let pub_keys =  prev_light_client_update_json["data"]["next_sync_committee"]["pubkeys"]
-                                                                                                .as_array().unwrap()
-                                                                                                .iter()
-                                                                                                .map(|i| i.to_string())
-                                                                                                .collect::<Vec<String>>();
+    let g1 = G1Projective::generator();
+    let pubkey_g1 =
+        G1Affine::deserialize_compressed_unchecked(&*hex::decode(pubkey).unwrap()).unwrap();
+    let signature_g2 =
+        G2Affine::deserialize_compressed_unchecked(&*hex::decode(signature).unwrap()).unwrap();
+    let message_g2 = hash_to_curve_g2(
+        &hex::decode(msg).unwrap(),
+        "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_".as_bytes(),
+    );
+    
+    let message_g2 = convert_ecp2_to_g2affine(message_g2);
 
-    let sync_aggregate_str = serde_json::to_string(light_client_update_json["data"]["sync_aggregate"].as_object().unwrap()).unwrap();                                                                                      
-    let sync_aggregate: SyncAggregate = serde_json::from_str(&sync_aggregate_str).unwrap();
+    let neg_g1 = g1.neg();
 
-    let domain:[u8;32] = hex::decode("0x070000006a95a1a967855d676d48be69883b712607f952d5198d0f5677564636".split_at(2).1).unwrap().try_into().unwrap();
-    let domain_h256 = H256::from(domain);
-
-    let attested_header_str = serde_json::to_string(&light_client_update_json["data"]["attested_header"]["beacon"].as_object().unwrap()).unwrap();
-    let attested_header: BeaconBlockHeader = serde_json::from_str(&attested_header_str).unwrap();
-
-    let signing_root = H256(
-        SigningData{
-            object_root: H256(attested_header.tree_hash_root()),
-            domain: domain_h256
-        }.tree_hash_root()
+    let result_message = miller_loop(
+        Fp::get_fp_from_biguint(pubkey_g1.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(pubkey_g1.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(message_g2.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message_g2.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(message_g2.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(message_g2.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
     );
 
-    let prev_next_sync_committee_branch_json_str = serde_json::to_string(&prev_light_client_update_json["data"]["next_sync_committee_branch"].as_array().unwrap()).unwrap();
-    let prev_next_sync_committee_branch: Vec<eth_types::H256> =
-    serde_json::from_str(&prev_next_sync_committee_branch_json_str).unwrap();
+    let result_signature = miller_loop(
+        Fp::get_fp_from_biguint(neg_g1.x.to_string().parse::<BigUint>().unwrap()),
+        Fp::get_fp_from_biguint(neg_g1.y.to_string().parse::<BigUint>().unwrap()),
+        Fp2([
+            Fp::get_fp_from_biguint(signature_g2.x.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature_g2.x.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(signature_g2.y.c0.to_string().parse::<BigUint>().unwrap()),
+            Fp::get_fp_from_biguint(signature_g2.y.c1.to_string().parse::<BigUint>().unwrap()),
+        ]),
+        Fp2([
+            Fp::get_fp_from_biguint(BigUint::from_str("1").unwrap()),
+            Fp::get_fp_from_biguint(BigUint::from_str("0").unwrap()),
+        ]),
+    );
+    let fp12_mul = result_message * result_signature;
 
-    let prev_next_sync_committee_json_str = serde_json::to_string(&prev_light_client_update_json["data"]["next_sync_committee"]).unwrap();
-    let prev_next_sync_committee: SyncCommittee =
-        serde_json::from_str(&prev_next_sync_committee_json_str).unwrap();
+    let final_exp = fp12_mul.final_exponentiate();
 
-    let prev_sync_committee_update = SyncCommitteeUpdate {
-        next_sync_committee: prev_next_sync_committee,
-        next_sync_committee_branch: prev_next_sync_committee_branch,
-    };
+    println!("fp12_mul: {:?}", fp12_mul);
+    println!("final_exp: {:?}", final_exp);
 
-    aggregate_proof(pub_keys, sync_aggregate,signing_root.0.0, prev_sync_committee_update);
-    return;
+    let (stark_final_exp, proof_final_exp, config_final_exp) =
+        final_exponentiate_main::<F, C, D>(fp12_mul);
+}
+
+fn main() {
+    std::thread::Builder::new()
+        .spawn(|| {
+            main_thread();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn convert_ecp2_to_g2affine(ecp2_point: ECP2) -> G2Affine {
+    let x = Fq2::new(
+        convert_big_to_fq(ecp2_point.getpx().geta()),
+        convert_big_to_fq(ecp2_point.getpx().getb()),
+    );
+
+    let y = Fq2::new(
+        convert_big_to_fq(ecp2_point.getpy().geta()),
+        convert_big_to_fq(ecp2_point.getpy().getb()),
+    );
+
+    G2Affine::new(x, y)
+}
+
+fn convert_big_to_fq(big: Big) -> Fq {
+    let bytes = &hex::decode(big.to_string()).unwrap();
+    Fq::from_be_bytes_mod_order(bytes)
 }

@@ -25,6 +25,8 @@ tree_hash_derive = "0.5"
 ark-bls12-381 = "0.4.0"
 ark-std = "0.4.0"
 ark-ec = "0.4.2"
+ark-serialize = "0.4.2"
+ark-ff = "0.4.2"
 
 [profile.test]
 opt-level = 3
